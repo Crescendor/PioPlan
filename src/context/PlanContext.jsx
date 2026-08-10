@@ -398,6 +398,10 @@ export function PlanProvider({ children }) {
   // PIONEERS AI TRIGGER: GENERATE SCHEDULE
   const generateScheduleAi = async (customInstructions = '') => {
     const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
+    if (!currentTeam) {
+      notify('Lütfen önce bir takım oluşturun.', 'warning');
+      return;
+    }
     const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
 
     if (teamAgents.length === 0) {
@@ -455,6 +459,7 @@ export function PlanProvider({ children }) {
   // PIONEERS AI TRIGGER: AUDIT EXISTING SCHEDULE
   const auditCurrentScheduleAi = async () => {
     const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
+    if (!currentTeam) return;
     const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
     const monday = getMondayOfWeek(new Date(currentDate));
     const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());

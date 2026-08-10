@@ -8,14 +8,14 @@ import { formatTurkishDisplay } from '../../utils/dateUtils';
 export function ShiftEditModal({ isOpen, onClose, assignment, date, initialAgentId, teamId }) {
   const { teams, agents, updateAssignment, addAssignment, deleteAssignment } = usePlan();
 
-  const currentTeam = teams.find(t => t.id === teamId) || teams[0];
-  const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+  const currentTeam = teams.find(t => t.id === teamId) || teams[0] || null;
+  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
 
   const [selectedTemplateId, setSelectedTemplateId] = useState(
-    assignment ? assignment.shiftTemplateId : currentTeam.shiftTemplates[0]?.id
+    assignment ? assignment.shiftTemplateId : (currentTeam?.shiftTemplates?.[0]?.id || '')
   );
   const [primaryAgentId, setPrimaryAgentId] = useState(
-    assignment ? assignment.primaryAgentId : (initialAgentId || teamAgents[0]?.id)
+    assignment ? assignment.primaryAgentId : (initialAgentId || teamAgents[0]?.id || '')
   );
   const [backup1Id, setBackup1Id] = useState(assignment ? assignment.backupAgent1Id : '');
   const [backup2Id, setBackup2Id] = useState(assignment ? assignment.backupAgent2Id : '');
@@ -29,16 +29,27 @@ export function ShiftEditModal({ isOpen, onClose, assignment, date, initialAgent
       setBackup2Id(assignment.backupAgent2Id || '');
       setNotes(assignment.notes || '');
     } else {
-      setSelectedTemplateId(currentTeam.shiftTemplates[0]?.id);
-      setPrimaryAgentId(initialAgentId || teamAgents[0]?.id);
+      setSelectedTemplateId(currentTeam?.shiftTemplates?.[0]?.id || '');
+      setPrimaryAgentId(initialAgentId || teamAgents[0]?.id || '');
       setBackup1Id('');
       setBackup2Id('');
       setNotes('');
     }
   }, [assignment, initialAgentId, currentTeam]);
 
+  if (!isOpen || !currentTeam) return null;
+
   const handleSave = () => {
-    const template = currentTeam.shiftTemplates.find(t => t.id === selectedTemplateId) || currentTeam.shiftTemplates[0];
+    const template = currentTeam.shiftTemplates?.find(t => t.id === selectedTemplateId) || 
+                     currentTeam.shiftTemplates?.[0] || {
+                       id: 's_default',
+                       name: 'Genel Vardiya (09:00 - 18:00)',
+                       code: 'VARD',
+                       startTime: '09:00',
+                       endTime: '18:00',
+                       durationHours: 9.0,
+                       color: '#3b82f6'
+                     };
 
     const payload = {
       date: assignment ? assignment.date : date,
@@ -111,7 +122,7 @@ export function ShiftEditModal({ isOpen, onClose, assignment, date, initialAgent
             Vardiya Şablonu
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
-            {currentTeam.shiftTemplates.map(tmpl => {
+            {(currentTeam.shiftTemplates || []).map(tmpl => {
               const isSelected = selectedTemplateId === tmpl.id;
               return (
                 <button
@@ -155,11 +166,15 @@ export function ShiftEditModal({ isOpen, onClose, assignment, date, initialAgent
             value={primaryAgentId}
             onChange={(e) => setPrimaryAgentId(e.target.value)}
           >
-            {teamAgents.map(ag => (
-              <option key={ag.id} value={ag.id}>
-                {ag.name} ({ag.seniority}) - {ag.rules?.length ? `[${ag.rules.length} kural]` : '[Kural yok]'}
-              </option>
-            ))}
+            {teamAgents.length === 0 ? (
+              <option value="">Bu takımda henüz temsilci yok</option>
+            ) : (
+              teamAgents.map(ag => (
+                <option key={ag.id} value={ag.id}>
+                  {ag.name} ({ag.seniority})
+                </option>
+              ))
+            )}
           </select>
         </div>
 

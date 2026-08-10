@@ -42,14 +42,14 @@ export function ContinuousTimeline24h() {
   });
 
   const [selectedTimelineDate, setSelectedTimelineDate] = useState(currentDate || '2026-08-10');
-  const [filterTeamId, setFilterTeamId] = useState('all'); // 'all' | teamId
+  const [filterTeamId, setFilterTeamId] = useState('all');
   const scrollContainerRef = useRef(null);
 
   const currentHourNow = new Date().getHours();
   const hourSlots = get24HourSlots();
 
   // 7-day quick switcher tabs based on current reference date
-  const monday = getMondayOfWeek(new Date(selectedTimelineDate));
+  const monday = getMondayOfWeek(new Date(selectedTimelineDate || '2026-08-10'));
   const weekDays = getDaysOfWeek(monday);
 
   // Scroll to current hour automatically on initial mount
@@ -84,11 +84,9 @@ export function ContinuousTimeline24h() {
       const maxScroll = scrollContainerRef.current.scrollWidth - scrollContainerRef.current.clientWidth;
 
       if (hours > 0 && currentScroll >= maxScroll - 30) {
-        // Advanced past midnight, jump to next day
         handleNextDay();
         scrollContainerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
       } else if (hours < 0 && currentScroll <= 30) {
-        // Rewinded before midnight, jump to prev day
         handlePrevDay();
         scrollContainerRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
       } else {
@@ -109,7 +107,7 @@ export function ContinuousTimeline24h() {
     }
   };
 
-  // Filter assignments for selected date (matches real-time changes instantly!)
+  // Filter assignments for selected date
   const dateAssignments = assignments.filter(
     a => a.date === selectedTimelineDate && a.startTime !== 'OFF'
   );
@@ -122,7 +120,7 @@ export function ContinuousTimeline24h() {
 
   // Calculate live agents currently on shift at current hour
   const isSelectedDateToday = formatDateISO(new Date()) === selectedTimelineDate;
-  const liveTargetHour = isSelectedDateToday ? currentHourNow : 12; // Default to mid-day preview if looking at another day
+  const liveTargetHour = isSelectedDateToday ? currentHourNow : 12;
 
   const liveActiveAssignments = dateAssignments.filter(asg =>
     isShiftActiveAtHour(asg.startTime, asg.endTime, liveTargetHour)
@@ -379,7 +377,7 @@ export function ContinuousTimeline24h() {
                         ⚡ YEDEK DEVRALDI
                       </span>
                     )}
-                    <span style={{ color: tm?.color, fontSize: 10 }}>({tm?.code})</span>
+                    {tm && <span style={{ color: tm.color, fontSize: 10 }}>({tm.code})</span>}
                     <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{asg.startTime}-{asg.endTime}</span>
                   </div>
                 );
@@ -432,83 +430,86 @@ export function ContinuousTimeline24h() {
           })}
 
           {/* Agent Rows */}
-          {displayedAgents.map(agent => {
-            const agentTeam = teams.find(t => t.id === agent.teamId) || teams[0];
-            
-            // An agent can have multiple assignment segments (e.g. initial shift before handover + takeover shift after handover)
-            const agentAssignments = dateAssignments.filter(a => a.primaryAgentId === agent.id);
+          {displayedAgents.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              Timeline'da görüntülenecek temsilci bulunamadı. "Çalışanlar" sekmesinden yeni temsilci ekleyebilirsiniz.
+            </div>
+          ) : (
+            displayedAgents.map(agent => {
+              const agentTeam = teams.find(t => t.id === agent.teamId) || { name: 'Genel', color: '#3b82f6' };
+              const agentAssignments = dateAssignments.filter(a => a.primaryAgentId === agent.id);
 
-            return (
-              <div key={agent.id} className="timeline-row">
-                {/* Agent Sticky Left Card */}
-                <div className="timeline-agent-label">
-                  <div
-                    className="agent-avatar"
-                    style={{ background: agent.avatarBg || agentTeam.color, width: 28, height: 28, fontSize: 11 }}
-                  >
-                    {agent.avatar || 'AG'}
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {agent.name}
-                    </div>
-                    <div style={{ fontSize: 10, color: agentTeam.color, fontWeight: 600 }}>
-                      {agentTeam.name.split(' ')[0]} • {agent.seniority}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 24 Hour Slots for this Agent */}
-                {hourSlots.map(slot => {
-                  const isNow = isSelectedDateToday && slot.hour === currentHourNow;
-
-                  // Find if any assignment for this agent is active at this slot hour
-                  const activeAssignment = agentAssignments.find(a =>
-                    isShiftActiveAtHour(a.startTime, a.endTime, slot.hour)
-                  );
-
-                  return (
+              return (
+                <div key={agent.id} className="timeline-row">
+                  {/* Agent Sticky Left Card */}
+                  <div className="timeline-agent-label">
                     <div
-                      key={slot.hour}
-                      className={`timeline-slot-cell ${isNow ? 'now-highlight' : ''}`}
+                      className="agent-avatar"
+                      style={{ background: agent.avatarBg || agentTeam.color || '#3b82f6', width: 28, height: 28, fontSize: 11 }}
                     >
-                      {activeAssignment && (
-                        <div
-                          className="timeline-active-block"
-                          style={{
-                            background: activeAssignment.isHandoverTakeover
-                              ? 'linear-gradient(135deg, #f59e0b, #d97706)'
-                              : activeAssignment.isHandedOver
-                              ? 'linear-gradient(135deg, #ef4444, #b91c1c)'
-                              : (activeAssignment.color || agentTeam.color),
-                            border: activeAssignment.isHandoverTakeover
-                              ? '1px solid #fbbf24'
-                              : activeAssignment.isHandedOver
-                              ? '1px solid #f87171'
-                              : 'none',
-                            boxShadow: activeAssignment.isHandoverTakeover ? '0 0 10px rgba(245, 158, 11, 0.4)' : 'none'
-                          }}
-                          onClick={() => setHandoverModalState({
-                            isOpen: true,
-                            assignment: activeAssignment,
-                            defaultHour: slot.hour
-                          })}
-                          title={`Vardiya: ${activeAssignment.shiftName} (${activeAssignment.startTime} - ${activeAssignment.endTime})\n${activeAssignment.isHandoverTakeover ? '⚡ Yedek bu saatte devraldı.' : activeAssignment.isHandedOver ? '⏸️ Vardiya bu saatten sonra kesildi.' : 'Tıklayarak acil yedek devri yapabilirsiniz.'}`}
-                        >
-                          <div style={{ fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap' }}>
-                            {activeAssignment.isHandoverTakeover ? '⚡ YEDEK' : (activeAssignment.shiftCode || activeAssignment.startTime)}
-                          </div>
-                          <div style={{ fontSize: 8, opacity: 0.9 }}>
-                            {activeAssignment.startTime} - {activeAssignment.endTime}
-                          </div>
-                        </div>
-                      )}
+                      {agent.avatar || 'AG'}
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {agent.name}
+                      </div>
+                      <div style={{ fontSize: 10, color: agentTeam.color || '#38bdf8', fontWeight: 600 }}>
+                        {agentTeam.name.split(' ')[0]} • {agent.seniority}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 24 Hour Slots for this Agent */}
+                  {hourSlots.map(slot => {
+                    const isNow = isSelectedDateToday && slot.hour === currentHourNow;
+
+                    const activeAssignment = agentAssignments.find(a =>
+                      isShiftActiveAtHour(a.startTime, a.endTime, slot.hour)
+                    );
+
+                    return (
+                      <div
+                        key={slot.hour}
+                        className={`timeline-slot-cell ${isNow ? 'now-highlight' : ''}`}
+                      >
+                        {activeAssignment && (
+                          <div
+                            className="timeline-active-block"
+                            style={{
+                              background: activeAssignment.isHandoverTakeover
+                                ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                                : activeAssignment.isHandedOver
+                                ? 'linear-gradient(135deg, #ef4444, #b91c1c)'
+                                : (activeAssignment.color || agentTeam.color || '#3b82f6'),
+                              border: activeAssignment.isHandoverTakeover
+                                ? '1px solid #fbbf24'
+                                : activeAssignment.isHandedOver
+                                ? '1px solid #f87171'
+                                : 'none',
+                              boxShadow: activeAssignment.isHandoverTakeover ? '0 0 10px rgba(245, 158, 11, 0.4)' : 'none'
+                            }}
+                            onClick={() => setHandoverModalState({
+                              isOpen: true,
+                              assignment: activeAssignment,
+                              defaultHour: slot.hour
+                            })}
+                            title={`Vardiya: ${activeAssignment.shiftName} (${activeAssignment.startTime} - ${activeAssignment.endTime})`}
+                          >
+                            <div style={{ fontSize: 9.5, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                              {activeAssignment.isHandoverTakeover ? '⚡ YEDEK' : (activeAssignment.shiftCode || activeAssignment.startTime)}
+                            </div>
+                            <div style={{ fontSize: 8, opacity: 0.9 }}>
+                              {activeAssignment.startTime} - {activeAssignment.endTime}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 

@@ -9,14 +9,14 @@ export function ShiftHandoverModal({ isOpen, onClose, assignment, defaultHour })
   const { agents, teams, performShiftHandover } = usePlan();
 
   const [handoverHour, setHandoverHour] = useState(defaultHour !== undefined ? defaultHour : 14);
-  const [selectedBackupLevel, setSelectedBackupLevel] = useState(1); // 1: Backup 1, 2: Backup 2, 3: Custom
+  const [selectedBackupLevel, setSelectedBackupLevel] = useState(1);
   const [customAgentId, setCustomAgentId] = useState('');
   const [reason, setReason] = useState('Acil Sağlık / Rahatsızlık');
 
-  if (!assignment) return null;
+  if (!isOpen || !assignment) return null;
 
-  const currentTeam = teams.find(t => t.id === assignment.teamId) || teams[0];
-  const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+  const currentTeam = teams.find(t => t.id === assignment.teamId) || { name: 'Genel', color: '#3b82f6' };
+  const teamAgents = agents.filter(a => a.teamId === assignment.teamId);
 
   const primaryAgent = agents.find(a => a.id === assignment.primaryAgentId);
   const backup1 = agents.find(a => a.id === assignment.backupAgent1Id);
@@ -102,7 +102,7 @@ export function ShiftHandoverModal({ isOpen, onClose, assignment, defaultHour })
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
               {assignment.date}
             </div>
-            <div style={{ fontSize: 11, color: currentTeam.color }}>
+            <div style={{ fontSize: 11, color: currentTeam.color || '#3b82f6' }}>
               {currentTeam.name}
             </div>
           </div>
@@ -132,7 +132,7 @@ export function ShiftHandoverModal({ isOpen, onClose, assignment, defaultHour })
           </div>
         </div>
 
-        {/* Devralacak Yedek Seçimi (1. Yedek vs 2. Yedek vs Özel) */}
+        {/* Devralacak Yedek Seçimi */}
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
             Görevi Devralacak Personel (Yedek Rotasyonu)

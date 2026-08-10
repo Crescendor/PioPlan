@@ -9,7 +9,8 @@ import {
   Calendar,
   Clock,
   User,
-  Plus
+  Plus,
+  ShieldCheck
 } from 'lucide-react';
 import {
   getDaysInMonth,
@@ -32,6 +33,7 @@ export function MonthlyScheduler({ onOpenAiModal }) {
     setCurrentDate,
     period,
     setPeriod,
+    setCurrentView,
     isAiGenerating,
     notify
   } = usePlan();
@@ -43,10 +45,10 @@ export function MonthlyScheduler({ onOpenAiModal }) {
     agentId: null
   });
 
-  const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
-  const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+  const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
+  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
 
-  const parsedDate = new Date(currentDate);
+  const parsedDate = new Date(currentDate || '2026-08-10');
   const currentYear = parsedDate.getFullYear();
   const currentMonth = parsedDate.getMonth();
 
@@ -64,15 +66,51 @@ export function MonthlyScheduler({ onOpenAiModal }) {
   };
 
   const handleExportPdf = () => {
+    if (!currentTeam) return;
     exportTeamRosterPdf({
       team: currentTeam,
       agents: teamAgents,
-      days: monthDays.slice(0, 14), // clean two-week slice for readable PDF or full month
+      days: monthDays.slice(0, 14),
       assignments,
       periodLabel: `Aylık Roster (${monthTitle})`
     });
     notify(`${currentTeam.name} ${monthTitle} programı PDF olarak indirildi.`, 'success');
   };
+
+  if (!currentTeam || teams.length === 0) {
+    return (
+      <div className="glass-panel" style={{ padding: '60px 30px', textAlign: 'center' }}>
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 'var(--radius-lg)',
+            background: 'rgba(59, 130, 246, 0.15)',
+            color: '#38bdf8',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 16
+          }}
+        >
+          <ShieldCheck size={30} />
+        </div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#ffffff', marginBottom: 8 }}>
+          Henüz Bir Takım Oluşturulmamış
+        </h2>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 500, margin: '0 auto 20px', lineHeight: 1.5 }}>
+          Aylık takvim çizelgesi için lütfen önce ilk takımınızı oluşturun.
+        </p>
+        <button
+          onClick={() => setCurrentView('teams')}
+          className="btn btn-primary"
+          style={{ padding: '10px 24px' }}
+        >
+          <Plus size={16} /> Takımlar & Kurallar Sekmesine Git
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -318,14 +356,16 @@ export function MonthlyScheduler({ onOpenAiModal }) {
       <AiAuditScorecard />
 
       {/* Shift Edit Modal */}
-      <ShiftEditModal
-        isOpen={modalState.isOpen}
-        onClose={() => setModalState({ isOpen: false, assignment: null, date: null, agentId: null })}
-        assignment={modalState.assignment}
-        date={modalState.date}
-        initialAgentId={modalState.agentId}
-        teamId={currentTeam.id}
-      />
+      {currentTeam && (
+        <ShiftEditModal
+          isOpen={modalState.isOpen}
+          onClose={() => setModalState({ isOpen: false, assignment: null, date: null, agentId: null })}
+          assignment={modalState.assignment}
+          date={modalState.date}
+          initialAgentId={modalState.agentId}
+          teamId={currentTeam.id}
+        />
+      )}
     </div>
   );
 }

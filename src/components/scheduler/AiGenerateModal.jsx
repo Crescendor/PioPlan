@@ -17,10 +17,11 @@ export function AiGenerateModal({ isOpen, onClose }) {
   } = usePlan();
 
   const [customInstructions, setCustomInstructions] = useState('');
-  const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
-  const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+  const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
+  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
 
   const handleGenerate = async () => {
+    if (!currentTeam) return;
     await generateScheduleAi(customInstructions);
     try {
       confetti({
@@ -33,6 +34,16 @@ export function AiGenerateModal({ isOpen, onClose }) {
     }
     onClose();
   };
+
+  if (!currentTeam) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Pioneers AI Otomatik Planlama">
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)' }}>
+          Henüz oluşturulmuş bir takım bulunmuyor. Lütfen önce Takımlar & Kurallar sayfasından takım oluşturun.
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal
@@ -91,7 +102,7 @@ export function AiGenerateModal({ isOpen, onClose }) {
             }}
           >
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Hedef Takım</div>
-            <div style={{ fontWeight: 700, color: currentTeam.color, fontSize: 14, marginTop: 2 }}>
+            <div style={{ fontWeight: 700, color: currentTeam.color || '#3b82f6', fontSize: 14, marginTop: 2 }}>
               {currentTeam.name}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
