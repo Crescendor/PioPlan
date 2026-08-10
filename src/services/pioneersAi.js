@@ -1,22 +1,17 @@
-// src/services/pioneersAi.js
-// Pioneers AI Engine - Powered by Gemini API for Call Center Shift Optimization & Auditing
-
+// Permanent fixed Pioneers AI Gemini Key
+const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHloWFVZX19yQU5adjhCYWxJQQ==');
 const PRIMARY_MODEL = 'gemini-3.6-flash';
 const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
 
 /**
- * Get active API key (from environment variable or localStorage)
+ * Get active API key (Fixed Pioneers AI Engine Key)
  */
 export function getPioneersApiKey() {
-  return localStorage.getItem('pioplan_gemini_key') || import.meta.env.VITE_PIONEERS_GEMINI_KEY || '';
+  return import.meta.env.VITE_PIONEERS_GEMINI_KEY || FIXED_KEY;
 }
 
 export function setPioneersApiKey(key) {
-  if (key) {
-    localStorage.setItem('pioplan_gemini_key', key.trim());
-  } else {
-    localStorage.removeItem('pioplan_gemini_key');
-  }
+  // Key is fixed system-wide
 }
 
 /**

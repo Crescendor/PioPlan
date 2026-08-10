@@ -8,14 +8,13 @@ import {
   ShieldCheck,
   Zap,
   RotateCcw,
-  Key,
   LogOut,
-  User
+  User,
+  Settings
 } from 'lucide-react';
 import { usePlan } from '../../context/PlanContext';
 import { useAuth } from '../../context/AuthContext';
-import { setPioneersApiKey, getPioneersApiKey } from '../../services/pioneersAi';
-import { Modal } from '../common/Modal';
+import { AdminProfileModal } from '../auth/AdminProfileModal';
 
 export function Navbar({ onOpenAiModal }) {
   const {
@@ -27,15 +26,7 @@ export function Navbar({ onOpenAiModal }) {
   } = usePlan();
 
   const { currentUser, isAdmin, logout } = useAuth();
-
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(getPioneersApiKey());
-
-  const handleSaveApiKey = () => {
-    setPioneersApiKey(apiKeyInput);
-    setIsApiKeyModalOpen(false);
-    notify('Pioneers AI API anahtarı başarıyla güncellendi.', 'success');
-  };
+  const [isAdminProfileOpen, setIsAdminProfileOpen] = useState(false);
 
   return (
     <>
@@ -92,7 +83,7 @@ export function Navbar({ onOpenAiModal }) {
                 className={`nav-tab-btn ${currentView === 'agents' ? 'active' : ''}`}
               >
                 <Users size={15} />
-                <span>Çalışanlar</span>
+                <span>Çalışanlar & Admin</span>
               </button>
             </>
           ) : (
@@ -127,8 +118,13 @@ export function Navbar({ onOpenAiModal }) {
             </button>
           )}
 
-          {/* User Profile Badge */}
+          {/* User Profile Badge (Clickable for Admin Profile Edit) */}
           <div
+            onClick={() => {
+              if (isAdmin) {
+                setIsAdminProfileOpen(true);
+              }
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -136,8 +132,12 @@ export function Navbar({ onOpenAiModal }) {
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-full)',
               padding: '4px 12px 4px 6px',
-              gap: 8
+              gap: 8,
+              cursor: isAdmin ? 'pointer' : 'default',
+              transition: 'all 0.15s ease'
             }}
+            className={isAdmin ? 'hover:border-purple-500' : ''}
+            title={isAdmin ? 'Admin profilini ve şifresini düzenlemek için tıklayın' : ''}
           >
             <div
               className="agent-avatar"
@@ -155,36 +155,25 @@ export function Navbar({ onOpenAiModal }) {
                 {currentUser?.name || 'Kullanıcı'}
               </div>
               <div style={{ fontSize: 10, color: isAdmin ? '#a78bfa' : '#38bdf8', fontWeight: 600 }}>
-                {isAdmin ? 'WFM Admin' : currentUser?.username || 'Temsilci'}
+                {isAdmin ? 'WFM Admin ⚙️' : currentUser?.username || 'Temsilci'}
               </div>
             </div>
           </div>
 
-          {/* Settings & Reset (Admin only) */}
+          {/* Reset (Admin only) */}
           {isAdmin && (
-            <>
-              <button
-                onClick={() => setIsApiKeyModalOpen(true)}
-                className="btn btn-outline btn-sm"
-                title="Pioneers AI API Ayarları"
-                style={{ padding: '6px 8px' }}
-              >
-                <Key size={14} />
-              </button>
-
-              <button
-                onClick={() => {
-                  if (window.confirm('Tüm veritabanını temizlemek istiyor musunuz?')) {
-                    resetToFactoryDefaults();
-                  }
-                }}
-                className="btn btn-outline btn-sm"
-                title="Verileri Temizle"
-                style={{ padding: '6px 8px' }}
-              >
-                <RotateCcw size={14} />
-              </button>
-            </>
+            <button
+              onClick={() => {
+                if (window.confirm('Tüm veritabanını temizlemek istiyor musunuz?')) {
+                  resetToFactoryDefaults();
+                }
+              }}
+              className="btn btn-outline btn-sm"
+              title="Verileri Temizle"
+              style={{ padding: '6px 8px' }}
+            >
+              <RotateCcw size={14} />
+            </button>
           )}
 
           {/* Logout */}
@@ -204,39 +193,13 @@ export function Navbar({ onOpenAiModal }) {
         </div>
       </header>
 
-      {/* API Key Modal */}
-      <Modal
-        isOpen={isApiKeyModalOpen}
-        onClose={() => setIsApiKeyModalOpen(false)}
-        title="Pioneers AI Motor Yapılandırması"
-        icon={<Sparkles size={20} />}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            PioPlan, vardiya kural optimizasyonları ve kural denetimi için <strong>Pioneers AI</strong> altyapısını kullanmaktadır.
-          </p>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-              Pioneers AI API Anahtarı
-            </label>
-            <input
-              type="text"
-              className="input"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="API Anahtarınızı girin..."
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setIsApiKeyModalOpen(false)}>
-              İptal
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleSaveApiKey}>
-              Kaydet
-            </button>
-          </div>
-        </div>
-      </Modal>
+      {/* Admin Profile & Password Edit Modal */}
+      {isAdmin && (
+        <AdminProfileModal
+          isOpen={isAdminProfileOpen}
+          onClose={() => setIsAdminProfileOpen(false)}
+        />
+      )}
     </>
   );
 }

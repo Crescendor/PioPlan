@@ -402,7 +402,7 @@ export function PlanProvider({ children }) {
       notify('Lütfen önce bir takım oluşturun.', 'warning');
       return;
     }
-    const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+    const teamAgents = agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id);
 
     if (teamAgents.length === 0) {
       notify('Seçili takımda henüz kayıtlı çalışan bulunmamaktadır.', 'error');
@@ -460,7 +460,7 @@ export function PlanProvider({ children }) {
   const auditCurrentScheduleAi = async () => {
     const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
     if (!currentTeam) return;
-    const teamAgents = agents.filter(a => a.teamId === currentTeam.id);
+    const teamAgents = agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id);
     const monday = getMondayOfWeek(new Date(currentDate));
     const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());
     const dateSet = new Set(days.map(d => d.iso));

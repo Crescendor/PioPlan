@@ -18,7 +18,7 @@ export function AiGenerateModal({ isOpen, onClose }) {
 
   const [customInstructions, setCustomInstructions] = useState('');
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
-  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
+  const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
 
   const handleGenerate = async () => {
     if (!currentTeam) return;

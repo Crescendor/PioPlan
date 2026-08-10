@@ -112,8 +112,9 @@ export function ContinuousTimeline24h() {
     a => a.date === selectedTimelineDate && a.startTime !== 'OFF'
   );
 
-  // Filter agents based on team filter
+  // Filter agents based on team filter (Admin is excluded from shift timeline)
   const displayedAgents = agents.filter(a => {
+    if (a.role === 'admin') return false;
     if (filterTeamId === 'all') return true;
     return a.teamId === filterTeamId;
   });

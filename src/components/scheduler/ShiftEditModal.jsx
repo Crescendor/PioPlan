@@ -9,7 +9,7 @@ export function ShiftEditModal({ isOpen, onClose, assignment, date, initialAgent
   const { teams, agents, updateAssignment, addAssignment, deleteAssignment } = usePlan();
 
   const currentTeam = teams.find(t => t.id === teamId) || teams[0] || null;
-  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
+  const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
 
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     assignment ? assignment.shiftTemplateId : (currentTeam?.shiftTemplates?.[0]?.id || '')

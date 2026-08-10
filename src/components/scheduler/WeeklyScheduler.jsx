@@ -47,7 +47,7 @@ export function WeeklyScheduler({ onOpenAiModal }) {
   });
 
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
-  const teamAgents = currentTeam ? agents.filter(a => a.teamId === currentTeam.id) : [];
+  const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
 
   // Compute current week days
   const monday = getMondayOfWeek(new Date(currentDate || '2026-08-10'));

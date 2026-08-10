@@ -6,14 +6,50 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext(null);
 
 const AUTH_STORAGE_KEY = 'pioplan_auth_session_v1';
+const ADMIN_STORAGE_KEY = 'pioplan_admin_profile_v1';
+
+const DEFAULT_ADMIN = {
+  id: 'admin-root',
+  username: 'admin',
+  name: 'WFM Sistem Yöneticisi (Admin)',
+  title: 'Baş Planlamacı / WFM Yöneticisi',
+  role: 'admin',
+  email: 'admin@pioplan.com',
+  phone: '+90 532 000 00 00',
+  password: 'Doxish44++',
+  avatar: 'AD',
+  avatarBg: '#8b5cf6',
+  isFirstLogin: false
+};
 
 export function AuthProvider({ children, agents, updateAgentPasswordInDb }) {
+  // Admin Profile state
+  const [adminProfile, setAdminProfile] = useState(() => {
+    const saved = localStorage.getItem(ADMIN_STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return {
+      ...DEFAULT_ADMIN,
+      password: import.meta.env.VITE_ADMIN_PASSWORD || DEFAULT_ADMIN.password,
+      username: import.meta.env.VITE_ADMIN_USERNAME || DEFAULT_ADMIN.username
+    };
+  });
+
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem(AUTH_STORAGE_KEY);
     return saved ? JSON.parse(saved) : null;
   });
 
   const [isMustChangePassword, setIsMustChangePassword] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify(adminProfile));
+  }, [adminProfile]);
 
   useEffect(() => {
     if (currentUser) {
@@ -23,13 +59,17 @@ export function AuthProvider({ children, agents, updateAgentPasswordInDb }) {
     }
   }, [currentUser]);
 
-  // Admin secret configuration (Cloudflare secret or .env)
-  const getAdminSecret = () => {
-    return import.meta.env.VITE_ADMIN_PASSWORD || 'Doxish44++';
-  };
-
-  const getAdminUsername = () => {
-    return import.meta.env.VITE_ADMIN_USERNAME || 'admin';
+  /**
+   * Update Admin Profile (name, email, phone, title, password)
+   */
+  const updateAdminProfile = (updatedFields) => {
+    setAdminProfile(prev => {
+      const next = { ...prev, ...updatedFields };
+      if (currentUser?.role === 'admin') {
+        setCurrentUser(next);
+      }
+      return next;
+    });
   };
 
   /**
@@ -40,21 +80,14 @@ export function AuthProvider({ children, agents, updateAgentPasswordInDb }) {
     const cleanPass = password.trim();
 
     // 1. Check Admin Login
-    if (cleanId.toLowerCase() === getAdminUsername().toLowerCase()) {
-      if (cleanPass === getAdminSecret()) {
-        const adminUser = {
-          id: 'admin-root',
-          username: 'admin',
-          name: 'WFM Baş Planlamacı (Admin)',
-          role: 'admin',
-          email: 'admin@pioplan.com',
-          avatar: 'AD',
-          avatarBg: '#8b5cf6',
-          isFirstLogin: false
-        };
-        setCurrentUser(adminUser);
+    const currentAdminUsername = adminProfile.username || 'admin';
+    const currentAdminPassword = adminProfile.password || import.meta.env.VITE_ADMIN_PASSWORD || 'Doxish44++';
+
+    if (cleanId.toLowerCase() === currentAdminUsername.toLowerCase()) {
+      if (cleanPass === currentAdminPassword) {
+        setCurrentUser(adminProfile);
         setIsMustChangePassword(false);
-        return { success: true, user: adminUser };
+        return { success: true, user: adminProfile };
       } else {
         return { success: false, error: 'Hatalı Admin şifresi girdiniz.' };
       }
@@ -129,6 +162,8 @@ export function AuthProvider({ children, agents, updateAgentPasswordInDb }) {
     <AuthContext.Provider
       value={{
         currentUser,
+        adminProfile,
+        updateAdminProfile,
         isAuthenticated: !!currentUser,
         isAdmin: currentUser?.role === 'admin',
         isMustChangePassword,
