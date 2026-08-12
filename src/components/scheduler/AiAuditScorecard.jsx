@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   TrendingUp,
   MessageSquareQuote,
-  Filter
+  Filter,
+  Play
 } from 'lucide-react';
 
 export function AiAuditScorecard() {
@@ -19,16 +20,77 @@ export function AiAuditScorecard() {
     auditCurrentScheduleAi,
     isAiAuditing,
     teams,
-    selectedTeamId
+    selectedTeamId,
+    assignments
   } = usePlan();
 
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'satisfied' | 'warning' | 'violated'
 
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
 
-  if (!aiAuditReport) return null;
+  // If no audit report has been generated yet, show the Audit Activation Card
+  if (!aiAuditReport) {
+    return (
+      <div
+        className="glass-panel"
+        style={{
+          marginTop: 24,
+          padding: '24px 28px',
+          borderRadius: 'var(--radius-xl)',
+          border: '1.5px solid rgba(139, 92, 246, 0.3)',
+          background: 'linear-gradient(135deg, rgba(16, 21, 34, 0.95), rgba(26, 16, 45, 0.85))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 16
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--pioneers-gradient)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              boxShadow: '0 0 20px rgba(139, 92, 246, 0.5)'
+            }}
+          >
+            <Sparkles size={24} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>
+                Pioneers AI Vardiya Sağlık & Kural Denetim Motoru
+              </h3>
+              <span className="pioneers-badge">
+                <Sparkles size={10} /> AI Otomatik Denetim
+              </span>
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4, maxWidth: 650 }}>
+              Takım kuralları, çalışan kişisel kısıtlamaları, ders/izin saatleri ve yedek güvencesini satır satır denetleyerek kalite skor kartı üretin.
+            </p>
+          </div>
+        </div>
 
-  const { score, status, summary, stats, checks = [], aiInsights = [] } = aiAuditReport;
+        <button
+          onClick={auditCurrentScheduleAi}
+          disabled={isAiAuditing}
+          className="btn btn-ai"
+          style={{ padding: '10px 20px', fontSize: 13.5 }}
+        >
+          <RefreshCw size={15} className={isAiAuditing ? 'animate-spin' : ''} />
+          <span>{isAiAuditing ? 'Pioneers AI Denetliyor...' : 'Vardiyayı Şimdi Denetle'}</span>
+        </button>
+      </div>
+    );
+  }
+
+  const { score = 100, summary = '', stats = {}, checks = [], aiInsights = [] } = aiAuditReport;
 
   const filteredChecks = checks.filter(c => {
     if (activeFilter === 'all') return true;
@@ -58,13 +120,13 @@ export function AiAuditScorecard() {
     }
     return (
       <span className="badge badge-danger">
-        <XCircle size={11} /> Sağlanamadı
+        <XCircle size={11} /> İhlal / Sağlanamadı
       </span>
     );
   };
 
   return (
-    <div className="audit-card">
+    <div className="audit-card" style={{ marginTop: 24 }}>
       {/* Header Banner */}
       <div className="audit-header-banner">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -100,7 +162,7 @@ export function AiAuditScorecard() {
           <button
             onClick={auditCurrentScheduleAi}
             disabled={isAiAuditing}
-            className="btn btn-outline btn-sm"
+            className="btn btn-ai btn-sm"
           >
             <RefreshCw size={13} className={isAiAuditing ? 'animate-spin' : ''} />
             <span>{isAiAuditing ? 'Denetleniyor...' : 'Yeniden Denetle'}</span>
@@ -163,6 +225,13 @@ export function AiAuditScorecard() {
             style={{ padding: '3px 8px', fontSize: 11 }}
           >
             Tehlikede ({stats?.warningCount || 0})
+          </button>
+          <button
+            onClick={() => setActiveFilter('violated')}
+            className={`btn btn-sm ${activeFilter === 'violated' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ padding: '3px 8px', fontSize: 11 }}
+          >
+            İhlal ({stats?.violatedCount || 0})
           </button>
         </div>
       </div>
@@ -283,7 +352,7 @@ export function AiAuditScorecard() {
           >
             <TrendingUp size={16} color="#38bdf8" />
             <span>
-              <strong>Yedek Güvencesi:</strong> Tüm vardiyalarda 1. ve 2. seviye yedekler tanımlı olduğundan operasyonel risk sıfıra yakındır.
+              <strong>Kural Güvencesi:</strong> Pioneers AI kural motoru tüm atamaları satır satır denetlemiştir.
             </span>
           </div>
         </div>

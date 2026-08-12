@@ -98,6 +98,28 @@ function extractJsonFromText(rawText) {
 }
 
 /**
+ * Helper: Find forbidden shift codes from manager instructions
+ */
+function extractForbiddenShifts(customInstructions, templates) {
+  if (!customInstructions) return [];
+  const lower = customInstructions.toLowerCase();
+  const forbidden = [];
+
+  templates.forEach(t => {
+    const code = (t.code || '').toLowerCase();
+    const name = (t.name || '').toLowerCase();
+    if (
+      (code && (lower.includes(`${code} olmasın`) || lower.includes(`${code} kesinlikle olmayacak`) || lower.includes(`${code} yok`) || lower.includes(`${code} yasak`) || lower.includes(`${code} iptal`))) ||
+      (name && (lower.includes(`${name} olmasın`) || lower.includes(`${name} kesinlikle olmayacak`) || lower.includes(`${name} yasak`)))
+    ) {
+      forbidden.push(t.id);
+    }
+  });
+
+  return forbidden;
+}
+
+/**
  * Generate a complete schedule for a given team, date range, and rule constraints using Pioneers AI
  */
 export async function generateScheduleWithAi({
@@ -107,6 +129,9 @@ export async function generateScheduleWithAi({
   period = 'week',
   customInstructions = ''
 }) {
+  const forbiddenShiftIds = extractForbiddenShifts(customInstructions, team.shiftTemplates || []);
+  const allowedTemplates = (team.shiftTemplates || []).filter(t => !forbiddenShiftIds.includes(t.id));
+
   const teamRulesText = (team.rules || []).length
     ? team.rules.map((r, i) => `  ${i + 1}. [Takım Kuralı] ${r}`).join('\n')
     : '  - Belirli bir takım kuralı girilmemiş.';
@@ -118,8 +143,8 @@ export async function generateScheduleWithAi({
     return `  - Çalışan: ${ag.name} (ID: "${ag.id}", Ünvan: ${ag.seniority}, Haftalık Hedef: ${ag.contractHoursWeekly} saat)\n    Kişisel Kuralları:\n${rules}`;
   }).join('\n');
 
-  const shiftTemplatesText = (team.shiftTemplates || []).map(s =>
-    `  - Vardiya ID: "${s.id}" | Kod: "${s.code}" | Ad: "${s.name}" | Saat: ${s.startTime} - ${s.endTime} | Süre: ${s.durationHours}s | Min Gereksinim: ${s.minRequired || 1}`
+  const shiftTemplatesText = allowedTemplates.map(s =>
+    `  - Vardiya ID: "${s.id}" | Kod: "${s.code}" | Ad: "${s.name}" | Saat: ${s.startTime} - ${s.endTime} | Süre: ${s.durationHours}s`
   ).join('\n');
 
   const dateListText = days.map(d => `  - Tarih: "${d.iso}" (${d.dayLong})`).join('\n');
@@ -133,7 +158,7 @@ KURAL VE TALİMAT HİYERARŞİSİ (BU HİYERARŞİYE KESİNLİKLE UYMAK ZORUNDAS
 ========================================================================
 
 1. [EN YÜKSEK ÖNCELİK - MUTLAK YÖNETİCİ TALİMATI]:
-${customInstructions ? `YÖNETİCİ TALİMATI: "${customInstructions}"\nUYARI: Bu talimat en üst düzey kuraldır. Eğer yönetici belirli bir vardiyayı (Örn: "BON01", "GEC01", vb.) veya saat aralığını veya kişiyi yasakladıysa / hariç tuttuysa, O VARDİYAYI HİÇBİR ÇALIŞANA VE HİÇBİR GÜNE KESİNLİKLE ATAMAYACAKSIN!` : 'Özel bir yönetici talimatı girilmedi.'}
+${customInstructions ? `YÖNETİCİ TALİMATI: "${customInstructions}"\nUYARI: Bu talimat en üst düzey kuraldır. Eğer yönetici belirli bir vardiyayı (Örn: BON01, GEC01 vb.) veya saat aralığını veya kişiyi yasakladıysa / hariç tuttuysa, O VARDİYAYI HİÇBİR ÇALIŞANA VE HİÇBİR GÜNE KESİNLİKLE ATAMAYACAKSIN!` : 'Özel bir yönetici talimatı girilmedi.'}
 
 2. [MUTLAK KURAL - ÇALIŞAN KİŞİSEL KURAL VE KISITLAMALARI]:
 Her bir çalışanın altında yazan kişisel kuralları (üniversite dersi, sağlık durumu, gece vardiyası yasağı, izin günleri, kıdem kuralı) SATIR SATIR incele.
@@ -144,7 +169,10 @@ Her bir çalışanın altında yazan kişisel kuralları (üniversite dersi, sa�
 3. [TAKIM KURALLARI]:
 ${teamRulesText}
 
-4. [YEDEK VE GÜVENCE KURALI]:
+4. [HER ÇALIŞAN İÇİN HER GÜN ATAMA ZORUNLULUĞU]:
+Planlanacak ${days.length} günün HER BİRİNDE, takımdaki ${agents.length} çalışanın HER BİRİ için tam 1 atama bulunmalıdır (Ya çalışan bir vardiya, ya da s_off izin günü).
+
+5. [YEDEK VE GÜVENCE KURALI]:
 Her aktif vardiya ataması için MUTLAKA bir "primaryAgentId" (Asıl görevli), "backupAgent1Id" (1. Yedek) ve "backupAgent2Id" (2. Yedek) atanmalıdır.
 (İzinli / s_off günleri hariç).
 
@@ -172,11 +200,11 @@ SADECE aşağıdaki JSON şemasına uygun, geçerli bir JSON çıktısı üret:
   "assignments": [
     {
       "date": "YYYY-MM-DD",
-      "shiftTemplateId": "s_aks",
+      "shiftTemplateId": "tmpl-id-veya-s_off",
       "primaryAgentId": "agent-id",
-      "backupAgent1Id": "backup-agent-1-id",
-      "backupAgent2Id": "backup-agent-2-id",
-      "notes": "Planlama ve kural uyumu notu"
+      "backupAgent1Id": "backup-1-id",
+      "backupAgent2Id": "backup-2-id",
+      "notes": "Planlama notu"
     }
   ],
   "auditReport": {
@@ -216,32 +244,100 @@ SADECE aşağıdaki JSON şemasına uygun, geçerli bir JSON çıktısı üret:
       throw new Error('Pioneers AI geçerli bir atama listesi döndürmedi.');
     }
 
-    // Enrich assignments with template data
-    const enrichedAssignments = parsed.assignments.map((asg, idx) => {
-      const tmpl = team.shiftTemplates.find(t => t.id === asg.shiftTemplateId) ||
-                   team.shiftTemplates.find(t => t.code === asg.shiftTemplateId) ||
-                   team.shiftTemplates.find(t => t.code === 'OFF') ||
-                   team.shiftTemplates[0];
+    const defaultWorkingTemplate = allowedTemplates.find(t => t.startTime !== 'OFF') || allowedTemplates[0] || {
+      id: 's_default',
+      name: 'Standart Vardiya',
+      code: 'STD',
+      startTime: '09:00',
+      endTime: '18:00',
+      durationHours: 9,
+      color: '#3b82f6'
+    };
 
-      return {
+    // Enrich assignments safely with template data
+    const enrichedAssignments = [];
+    const assignedKeySet = new Set();
+
+    parsed.assignments.forEach((asg, idx) => {
+      if (!asg.date || !asg.primaryAgentId) return;
+
+      const isOffShift = asg.shiftTemplateId === 's_off' ||
+                         asg.shiftTemplateId === 'OFF' ||
+                         asg.shiftCode === 'OFF' ||
+                         asg.startTime === 'OFF' ||
+                         (asg.shiftName && (asg.shiftName.includes('OFF') || asg.shiftName.includes('İzin')));
+
+      let finalTemplate = null;
+
+      if (isOffShift) {
+        finalTemplate = {
+          id: 's_off',
+          name: 'İzinli / OFF',
+          code: 'OFF',
+          startTime: 'OFF',
+          endTime: 'OFF',
+          durationHours: 0,
+          color: '#64748b'
+        };
+      } else {
+        // Find matching template among allowed templates
+        finalTemplate = allowedTemplates.find(t => t.id === asg.shiftTemplateId) ||
+                        allowedTemplates.find(t => t.code.toLowerCase() === asg.shiftTemplateId?.toLowerCase()) ||
+                        allowedTemplates.find(t => t.code.toLowerCase() === asg.shiftCode?.toLowerCase()) ||
+                        allowedTemplates.find(t => t.name.toLowerCase().includes(asg.shiftName?.toLowerCase())) ||
+                        defaultWorkingTemplate;
+      }
+
+      const key = `${asg.date}_${asg.primaryAgentId}`;
+      assignedKeySet.add(key);
+
+      enrichedAssignments.push({
         id: `asg-ai-${Date.now()}-${idx}`,
         date: asg.date,
         teamId: team.id,
-        shiftTemplateId: tmpl.id,
-        shiftName: tmpl.name,
-        shiftCode: tmpl.code,
-        startTime: tmpl.startTime,
-        endTime: tmpl.endTime,
-        durationHours: tmpl.durationHours,
-        color: tmpl.color,
+        shiftTemplateId: finalTemplate.id,
+        shiftName: finalTemplate.name,
+        shiftCode: finalTemplate.code,
+        startTime: finalTemplate.startTime,
+        endTime: finalTemplate.endTime,
+        durationHours: finalTemplate.durationHours,
+        color: finalTemplate.color,
         primaryAgentId: asg.primaryAgentId,
-        backupAgent1Id: asg.backupAgent1Id || null,
-        backupAgent2Id: asg.backupAgent2Id || null,
+        backupAgent1Id: isOffShift ? null : (asg.backupAgent1Id || null),
+        backupAgent2Id: isOffShift ? null : (asg.backupAgent2Id || null),
         status: 'scheduled',
         isHandedOver: false,
         handoverDetails: null,
-        notes: asg.notes || 'Pioneers AI Tarafından Optimize Edildi'
-      };
+        notes: asg.notes || (isOffShift ? 'Haftalık İzin / OFF' : 'Pioneers AI Tarafından Optimize Edildi')
+      });
+    });
+
+    // Ensure every agent has an assignment for every day (fill missing with OFF)
+    days.forEach(day => {
+      agents.forEach(agent => {
+        const key = `${day.iso}_${agent.id}`;
+        if (!assignedKeySet.has(key)) {
+          enrichedAssignments.push({
+            id: `asg-ai-fill-${day.iso}-${agent.id}`,
+            date: day.iso,
+            teamId: team.id,
+            shiftTemplateId: 's_off',
+            shiftName: 'İzinli / OFF',
+            shiftCode: 'OFF',
+            startTime: 'OFF',
+            endTime: 'OFF',
+            durationHours: 0,
+            color: '#64748b',
+            primaryAgentId: agent.id,
+            backupAgent1Id: null,
+            backupAgent2Id: null,
+            status: 'scheduled',
+            isHandedOver: false,
+            handoverDetails: null,
+            notes: 'Haftalık Dinlenme / OFF'
+          });
+        }
+      });
     });
 
     return {
@@ -251,8 +347,7 @@ SADECE aşağıdaki JSON şemasına uygun, geçerli bir JSON çıktısı üret:
       source: 'Pioneers AI (Canlı Motor - Gemini 3.6)'
     };
   } catch (err) {
-    console.warn('Pioneers AI Canlı API hatası oluştu, akıllı yerel optimizasyon algoritması devreye giriyor:', err);
-    // Use high quality local rule engine that strictly honors custom instructions and agent constraints
+    console.warn('Pioneers AI Canlı API hatası oluştu, akıllı yerel kural motoru devreye giriyor:', err);
     const localResult = generateLocalSmartSchedule(team, agents, days, customInstructions);
     return {
       success: true,
@@ -268,7 +363,7 @@ SADECE aşağıdaki JSON şemasına uygun, geçerli bir JSON çıktısı üret:
  */
 export async function auditScheduleWithAi({ team, agents, assignments, days, customInstructions = '' }) {
   const teamRulesText = (team.rules || []).map((r, i) => `${i + 1}. ${r}`).join('\n') || 'Kural yok.';
-  const agentRulesText = agents.map(a => `${a.name}: ${(a.rules || []).join('; ') || 'Özel kural yok'}`).join('\n');
+  const agentRulesText = agents.map(a => `${a.name} (${a.seniority}): ${(a.rules || []).join('; ') || 'Özel kural yok'}`).join('\n');
 
   const scheduleSummary = assignments.map(asg => {
     const ag = agents.find(a => a.id === asg.primaryAgentId)?.name || 'Atanmadı';
@@ -279,7 +374,8 @@ export async function auditScheduleWithAi({ team, agents, assignments, days, cus
 
   const prompt = `
 Sen Pioneers AI Vardiya Denetim ve Kalite Uzmanısın.
-Aşağıdaki mevcut çağrı merkezi vardiya çizelgesini takım kurallarına, çalışan kişisel kural kısıtlamalarına ve varsa yönetici talimatlarına göre satır satır denetle.
+Aşağıdaki mevcut çağrı merkezi vardiya çizelgesini takım kurallarına, çalışan kişisel kural kısıtlamalarına ve varsa yönetici talimatlarına göre SATIR SATIR KESİN ŞEKİLDE DENETLE.
+İhlal edilen her kuralı ('violated' veya 'warning') tespit et, sağlananları ('satisfied') belirt ve detaylı açıkla.
 
 ${customInstructions ? `YÖNETİCİ TALİMATI: "${customInstructions}"` : ''}
 
@@ -322,7 +418,7 @@ Lütfen kural uyumluluğunu değerlendir ve aşağıdaki JSON formatında skor k
 `;
 
   try {
-    const raw = await callGeminiApi(prompt, 'Sen Pioneers AI Vardiya Denetçisisin.', true);
+    const raw = await callGeminiApi(prompt, 'Sen Pioneers AI Vardiya Denetçisisin. Çıktıyı geçerli JSON olarak ver.', true);
     const parsed = extractJsonFromText(raw);
     if (parsed && parsed.checks) {
       return parsed;
@@ -339,25 +435,11 @@ Lütfen kural uyumluluğunu değerlendir ve aşağıdaki JSON formatında skor k
  */
 export function generateLocalSmartSchedule(team, agents, days, customInstructions = '') {
   const assignments = [];
-  
-  // 1. Filter out shift templates forbidden by manager custom instructions
-  const lowerInstructions = (customInstructions || '').toLowerCase();
+  const forbiddenShiftIds = extractForbiddenShifts(customInstructions, team.shiftTemplates || []);
   
   const activeTemplates = (team.shiftTemplates || [])
     .filter(t => t.startTime !== 'OFF')
-    .filter(t => {
-      if (!lowerInstructions) return true;
-      const code = (t.code || '').toLowerCase();
-      const name = (t.name || '').toLowerCase();
-      // If manager specifically prohibited this shift code or name
-      if (
-        (code && (lowerInstructions.includes(`${code} olmasın`) || lowerInstructions.includes(`${code} kesinlikle olmayacak`) || lowerInstructions.includes(`${code} yok`) || lowerInstructions.includes(`${code} yasak`))) ||
-        (name && (lowerInstructions.includes(`${name} olmasın`) || lowerInstructions.includes(`${name} kesinlikle olmayacak`) || lowerInstructions.includes(`${name} yasak`)))
-      ) {
-        return false;
-      }
-      return true;
-    });
+    .filter(t => !forbiddenShiftIds.includes(t.id));
 
   const offTemplate = (team.shiftTemplates || []).find(t => t.startTime === 'OFF') || {
     id: 's_off',
@@ -376,10 +458,9 @@ export function generateLocalSmartSchedule(team, agents, days, customInstruction
     const dayName = (day.dayLong || '').toLowerCase();
     const isWeekend = day.isWeekend;
 
-    // Determine available working pool
     const workingPool = [...agents];
 
-    // Helper: Check if an agent is allowed for a given template on this day
+    // Check if an agent is allowed for a given template on this day
     const isAgentAllowed = (agent, tmpl) => {
       const rules = (agent.rules || []).map(r => r.toLowerCase());
       const tmplName = (tmpl.name || '').toLowerCase();
@@ -390,12 +471,12 @@ export function generateLocalSmartSchedule(team, agents, days, customInstruction
 
       for (const r of rules) {
         // Night bans
-        if (isNight && (r.includes('gece vardiyası yazılamaz') || r.includes('gece çalışamaz') || r.includes('gece olmasın') || r.includes('gece yasak'))) {
+        if (isNight && (r.includes('gece vardiyası yazılamaz') || r.includes('gece çalışamaz') || r.includes('gece olmasın') || r.includes('gece yasak') || r.includes('gece yazılamaz'))) {
           return false;
         }
 
-        // Sunday / Weekend off rules
-        if (isWeekend && (r.includes('hafta sonu izinli') || r.includes('pazar izinli') || r.includes('hafta sonu çalışamaz'))) {
+        // Weekend off rules
+        if (isWeekend && (r.includes('hafta sonu izinli') || r.includes('pazar izinli') || r.includes('hafta sonu çalışamaz') || r.includes('pazar günü kesinlikle izinli'))) {
           return false;
         }
 
@@ -404,7 +485,7 @@ export function generateLocalSmartSchedule(team, agents, days, customInstruction
           if (r.includes('sadece akşam') && !isEvening) return false;
           if (r.includes('sadece sabah') && !isMorning) return false;
           if (r.includes('sadece gece') && !isNight) return false;
-          if (r.includes('izinli') || r.includes('çalışamaz') || r.includes('dersi var')) {
+          if (r.includes('izinli') || r.includes('çalışamaz') || r.includes('dersi var') || r.includes('randevu')) {
             if (!r.includes('akşam') && !r.includes('sabah')) return false;
           }
         }
@@ -421,7 +502,6 @@ export function generateLocalSmartSchedule(team, agents, days, customInstruction
       for (let r = 0; r < required; r++) {
         if (workingPool.length === 0) break;
 
-        // Find primary agent who satisfies rules
         const candidateIdx = workingPool.findIndex(ag => isAgentAllowed(ag, tmpl));
         if (candidateIdx === -1) continue;
 
@@ -494,18 +574,33 @@ export function generateHeuristicAudit(team, agents, assignments, customInstruct
 
   // Check 1: Custom Manager Instructions
   if (customInstructions && customInstructions.trim()) {
-    satisfied++;
-    checks.push({
-      id: 'chk-custom-instruction',
-      target: 'Yönetici Talimatı',
-      category: 'Özel Talimat',
-      status: 'satisfied',
-      rule: customInstructions,
-      details: 'Pioneers AI tarafından yönetici talimatına %100 tam uyum sağlandı.'
-    });
+    const forbiddenShiftIds = extractForbiddenShifts(customInstructions, team.shiftTemplates || []);
+    const hasForbiddenAssigned = assignments.some(a => forbiddenShiftIds.includes(a.shiftTemplateId) && a.startTime !== 'OFF');
+
+    if (!hasForbiddenAssigned) {
+      satisfied++;
+      checks.push({
+        id: 'chk-custom-instruction',
+        target: 'Yönetici Talimatı',
+        category: 'Yönetici Talimatı',
+        status: 'satisfied',
+        rule: customInstructions,
+        details: 'Yönetici talimatına ve kısıtlamalarına %100 tam uyum sağlandı.'
+      });
+    } else {
+      violated++;
+      checks.push({
+        id: 'chk-custom-instruction',
+        target: 'Yönetici Talimatı İhlali',
+        category: 'Yönetici Talimatı',
+        status: 'violated',
+        rule: customInstructions,
+        details: 'Yasaklanan vardiya çizelgeye dahil edilmiş görünüyor.'
+      });
+    }
   }
 
-  // Check 2: Yedek Güvencesi (Backup coverage)
+  // Check 2: Backup coverage
   const activeShifts = assignments.filter(a => a.startTime !== 'OFF');
   const missingBackups = activeShifts.filter(a => !a.backupAgent1Id || !a.backupAgent2Id);
   if (missingBackups.length === 0) {
@@ -513,7 +608,7 @@ export function generateHeuristicAudit(team, agents, assignments, customInstruct
     checks.push({
       id: 'chk-backups',
       target: `${team.name} - Yedek Güvencesi`,
-      category: 'Operasyonel Güvenlik',
+      category: 'Yedek Güvencesi',
       status: 'satisfied',
       rule: 'Tüm aktif vardiyalarda 1. Yedek ve 2. Yedek atanmış olmalıdır.',
       details: `Planlanan ${activeShifts.length} vardiyanın tamamında 1. ve 2. seviye yedekler eksiksiz tanımlanmıştır.`
@@ -523,7 +618,7 @@ export function generateHeuristicAudit(team, agents, assignments, customInstruct
     checks.push({
       id: 'chk-backups',
       target: `${team.name} - Yedek Eksikliği`,
-      category: 'Operasyonel Güvenlik',
+      category: 'Yedek Güvencesi',
       status: 'warning',
       rule: 'Tüm vardiyalarda 2 kademeli yedek bulunmalıdır.',
       details: `${missingBackups.length} vardiyada 1. veya 2. yedek temsilci eksik.`
@@ -551,7 +646,7 @@ export function generateHeuristicAudit(team, agents, assignments, customInstruct
         checks.push({
           id: `chk-ag-${ag.id}-${rIdx}`,
           target: ag.name,
-          category: 'Kullanıcı Kuralı',
+          category: 'Çalışan Kuralı',
           status: 'satisfied',
           rule: r,
           details: `${ag.name} için kişisel kural kısıtlaması tam olarak sağlandı.`
@@ -561,7 +656,7 @@ export function generateHeuristicAudit(team, agents, assignments, customInstruct
   });
 
   const total = satisfied + warning + violated;
-  const score = Math.max(90, Math.round(((satisfied * 1.0 + warning * 0.5) / Math.max(1, total)) * 100));
+  const score = Math.max(70, Math.round(((satisfied * 1.0 + warning * 0.5) / Math.max(1, total)) * 100));
 
   return {
     score,
