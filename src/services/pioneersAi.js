@@ -2,7 +2,7 @@
 // Pioneers AI Engine - Powered by Google Gemini API for Call Center Shift Optimization & Auditing
 
 // Permanent fixed Pioneers AI Gemini Key
-const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHloWFVZX19yQU5adjhCYWxJQQ==');
+const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHlIaFhVWV9fckFOWnY4QmFsSUE=');
 
 // Top performant Gemini models in priority order
 const MODELS_TO_TRY = [
