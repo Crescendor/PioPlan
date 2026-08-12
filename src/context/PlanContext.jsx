@@ -460,6 +460,7 @@ export function PlanProvider({ children }) {
   const auditCurrentScheduleAi = async () => {
     const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0];
     if (!currentTeam) return;
+    const teamAgents = agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id);
     const parsedD = new Date(currentDate);
     const monday = getMondayOfWeek(parsedD);
     const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(parsedD.getFullYear(), parsedD.getMonth());
