@@ -11,7 +11,7 @@ import { ContinuousTimeline24h } from './components/timeline/ContinuousTimeline2
 import { TeamManager } from './components/teams/TeamManager';
 import { AgentManager } from './components/agents/AgentManager';
 import { EmployeePortal } from './components/portal/EmployeePortal';
-import { AiGenerateModal } from './components/scheduler/AiGenerateModal';
+import { AiAgentPlannerModal } from './components/scheduler/AiAgentPlannerModal';
 import { Toast } from './components/common/Toast';
 import './styles/components.css';
 
@@ -53,9 +53,9 @@ function MainLayout() {
         )}
       </main>
 
-      {/* Pioneers AI Schedule Generation Modal */}
+      {/* Pioneers AI Autonomous Planning Agent Modal */}
       {isAdmin && (
-        <AiGenerateModal
+        <AiAgentPlannerModal
           isOpen={isAiModalOpen}
           onClose={() => setIsAiModalOpen(false)}
         />
