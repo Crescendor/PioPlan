@@ -279,6 +279,40 @@ export function PlanProvider({ children }) {
     notify('Vardiya silindi.', 'info');
   };
 
+  const bulkDeleteAssignments = (assignmentIds = []) => {
+    if (!assignmentIds.length) return;
+    const idSet = new Set(assignmentIds);
+    setAssignments(prev => prev.filter(a => !idSet.has(a.id)));
+    notify(`${assignmentIds.length} adet vardiya ataması toplu olarak silindi.`, 'info');
+  };
+
+  const clearSchedule = ({ teamId = null, dateList = [], scope = 'period' }) => {
+    if (scope === 'all') {
+      setAssignments([]);
+      setAiAuditReport(null);
+      notify('Tüm takımların vardiya programı tamamen temizlendi.', 'info', 'Tüm Program Sıfırlandı');
+      return;
+    }
+
+    if (scope === 'team_all' && teamId) {
+      setAssignments(prev => prev.filter(a => a.teamId !== teamId));
+      setAiAuditReport(null);
+      const teamObj = teams.find(t => t.id === teamId);
+      notify(`${teamObj?.name || 'Seçili takımın'} tüm vardiya programı temizlendi.`, 'info', 'Takım Programı Temizlendi');
+      return;
+    }
+
+    if (dateList && dateList.length > 0) {
+      const dateSet = new Set(dateList.map(d => typeof d === 'string' ? d : d.iso));
+      setAssignments(prev => prev.filter(a => {
+        if (teamId && a.teamId !== teamId) return true;
+        return !dateSet.has(a.date);
+      }));
+      setAiAuditReport(null);
+      notify(`Seçili döneme ait (${dateList.length} gün) vardiyalar temizlendi.`, 'info', 'Dönem Temizlendi');
+    }
+  };
+
   // TEAM SHIFT TEMPLATES CRUD
   const addShiftTemplate = (teamId, newTemplate) => {
     const tmplWithId = {
@@ -538,6 +572,8 @@ export function PlanProvider({ children }) {
         updateAssignment,
         addAssignment,
         deleteAssignment,
+        bulkDeleteAssignments,
+        clearSchedule,
         addShiftTemplate,
         updateShiftTemplate,
         deleteShiftTemplate,

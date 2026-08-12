@@ -11,7 +11,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   UserCheck,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Trash2
 } from 'lucide-react';
 import {
   getMondayOfWeek,
@@ -21,6 +22,7 @@ import {
 } from '../../utils/dateUtils';
 import { ShiftEditModal } from './ShiftEditModal';
 import { AiAuditScorecard } from './AiAuditScorecard';
+import { ClearScheduleModal } from './ClearScheduleModal';
 import { exportTeamRosterPdf } from '../../services/pdfService';
 
 export function WeeklyScheduler({ onOpenAiModal }) {
@@ -45,6 +47,8 @@ export function WeeklyScheduler({ onOpenAiModal }) {
     date: null,
     agentId: null
   });
+
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
   const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
@@ -252,6 +256,17 @@ export function WeeklyScheduler({ onOpenAiModal }) {
           >
             <Download size={14} />
             <span>PDF İndir</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsClearModalOpen(true)}
+            className="btn btn-danger btn-sm"
+            style={{ padding: '6px 10px' }}
+            title="Vardiya Planını Temizle"
+          >
+            <Trash2 size={14} />
+            <span>Planı Temizle</span>
           </button>
         </div>
       </div>
@@ -496,6 +511,17 @@ export function WeeklyScheduler({ onOpenAiModal }) {
           date={modalState.date}
           initialAgentId={modalState.agentId}
           teamId={currentTeam.id}
+        />
+      )}
+
+      {/* Clear Schedule Modal */}
+      {currentTeam && (
+        <ClearScheduleModal
+          isOpen={isClearModalOpen}
+          onClose={() => setIsClearModalOpen(false)}
+          currentTeam={currentTeam}
+          currentDays={weekDays}
+          periodLabel={`Bu Hafta (${weekTitle})`}
         />
       )}
     </div>

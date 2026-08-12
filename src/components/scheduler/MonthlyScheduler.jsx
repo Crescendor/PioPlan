@@ -10,7 +10,8 @@ import {
   Clock,
   User,
   Plus,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import {
   getDaysInMonth,
@@ -20,6 +21,7 @@ import {
 } from '../../utils/dateUtils';
 import { ShiftEditModal } from './ShiftEditModal';
 import { AiAuditScorecard } from './AiAuditScorecard';
+import { ClearScheduleModal } from './ClearScheduleModal';
 import { exportTeamRosterPdf } from '../../services/pdfService';
 
 export function MonthlyScheduler({ onOpenAiModal }) {
@@ -44,6 +46,8 @@ export function MonthlyScheduler({ onOpenAiModal }) {
     date: null,
     agentId: null
   });
+
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
   const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
@@ -212,6 +216,17 @@ export function MonthlyScheduler({ onOpenAiModal }) {
             <Download size={14} />
             <span>PDF İndir</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setIsClearModalOpen(true)}
+            className="btn btn-danger btn-sm"
+            style={{ padding: '6px 10px' }}
+            title="Vardiya Planını Temizle"
+          >
+            <Trash2 size={14} />
+            <span>Planı Temizle</span>
+          </button>
         </div>
       </div>
 
@@ -364,6 +379,17 @@ export function MonthlyScheduler({ onOpenAiModal }) {
           date={modalState.date}
           initialAgentId={modalState.agentId}
           teamId={currentTeam.id}
+        />
+      )}
+
+      {/* Clear Schedule Modal */}
+      {currentTeam && (
+        <ClearScheduleModal
+          isOpen={isClearModalOpen}
+          onClose={() => setIsClearModalOpen(false)}
+          currentTeam={currentTeam}
+          currentDays={monthDays}
+          periodLabel={`Bu Ay (${monthTitle})`}
         />
       )}
     </div>
