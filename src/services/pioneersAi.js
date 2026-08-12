@@ -7,8 +7,6 @@ const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHloWFVZX19y
 // Top performant Gemini models in priority order
 const MODELS_TO_TRY = [
   'gemini-3.6-flash',
-  'gemini-3.1-pro-preview',
-  'gemini-pro-latest',
   'gemini-flash-latest'
 ];
 
@@ -59,10 +57,8 @@ async function callGeminiApi(promptText, systemInstruction = '', responseSchemaJ
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanKey
+          'Content-Type': 'application/json'
         },
-        credentials: 'omit',
         body: JSON.stringify(body)
       });
 

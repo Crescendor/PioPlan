@@ -6,8 +6,6 @@ import { getPioneersApiKey } from './pioneersAi';
 
 const MODELS_TO_TRY = [
   'gemini-3.6-flash',
-  'gemini-3.1-pro-preview',
-  'gemini-pro-latest',
   'gemini-flash-latest'
 ];
 
@@ -23,6 +21,7 @@ export async function executeAiPlanningAgent({
   period = 'week'
 }) {
   const apiKey = getPioneersApiKey();
+  const cleanKey = (apiKey || '').trim();
 
   // 1. Prepare structured context
   const shiftTemplatesList = (team.shiftTemplates || [])
@@ -109,16 +108,13 @@ LÜTFEN SADECE AŞAĞIDAKİ GEÇERLİ JSON ŞEMASINDA CEVAP VER:
 
   for (const modelName of MODELS_TO_TRY) {
     try {
-      const cleanKey = (apiKey || '').trim();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
       const res = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanKey
+          'Content-Type': 'application/json'
         },
-        credentials: 'omit',
         body: JSON.stringify({
           contents: [{ parts: [{ text: agentPrompt }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
