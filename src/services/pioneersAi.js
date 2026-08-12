@@ -6,8 +6,11 @@ const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHlIaFhVWV9f
 
 // Top performant Gemini models in priority order
 const MODELS_TO_TRY = [
-  'gemini-3.6-flash',
-  'gemini-flash-latest'
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash'
 ];
 
 /**
