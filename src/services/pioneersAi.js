@@ -1,6 +1,8 @@
 // src/services/pioneersAi.js
 // Pioneers AI Engine - Powered by Google Gemini API for Call Center Shift Optimization & Auditing
 
+import { solveWfmSchedule } from './wfmSolver';
+
 // Permanent fixed Pioneers AI Gemini Key
 const FIXED_KEY = atob('QVEuQWI4Uk42S1dXemNKUVFubmNhMzA2M1FrQkkxNHY1UHlIaFhVWV9fckFOWnY4QmFsSUE=');
 
@@ -241,125 +243,23 @@ SADECE aşağıdaki JSON şemasına uygun, geçerli bir JSON çıktısı üret:
 
   const systemInstruction = 'Sen Pioneers AI olarak çağrı merkezi WFM algoritmasısın. Çıktıyı hatasız, kural kısıtlamalarına %100 sadık ve geçerli JSON olarak ver.';
 
-  try {
-    const rawResponse = await callGeminiApi(prompt, systemInstruction, true);
-    const parsed = extractJsonFromText(rawResponse);
-    if (!parsed || !parsed.assignments || !Array.isArray(parsed.assignments)) {
-      throw new Error('Pioneers AI geçerli bir atama listesi döndürmedi.');
-    }
+  // Execute mathematical WFM Constraint Solver
+  const solverResult = solveWfmSchedule({
+    team,
+    agents,
+    days,
+    forbiddenShiftIds: Array.from(forbiddenTemplateIds),
+    customDirectives: customInstructions
+  });
 
-    const defaultWorkingTemplate = allowedTemplates.find(t => t.startTime !== 'OFF') || allowedTemplates[0] || {
-      id: 's_default',
-      name: 'Standart Vardiya',
-      code: 'STD',
-      startTime: '09:00',
-      endTime: '18:00',
-      durationHours: 9,
-      color: '#3b82f6'
-    };
+  const auditReport = generateHeuristicAudit(team, agents, solverResult.assignments, customInstructions);
 
-    // Enrich assignments safely with template data
-    const enrichedAssignments = [];
-    const assignedKeySet = new Set();
-
-    parsed.assignments.forEach((asg, idx) => {
-      if (!asg.date || !asg.primaryAgentId) return;
-
-      const isOffShift = asg.shiftTemplateId === 's_off' ||
-                         asg.shiftTemplateId === 'OFF' ||
-                         asg.shiftCode === 'OFF' ||
-                         asg.startTime === 'OFF' ||
-                         (asg.shiftName && (asg.shiftName.includes('OFF') || asg.shiftName.includes('İzin')));
-
-      let finalTemplate = null;
-
-      if (isOffShift) {
-        finalTemplate = {
-          id: 's_off',
-          name: 'İzinli / OFF',
-          code: 'OFF',
-          startTime: 'OFF',
-          endTime: 'OFF',
-          durationHours: 0,
-          color: '#64748b'
-        };
-      } else {
-        // Find matching template among allowed templates
-        finalTemplate = allowedTemplates.find(t => t.id === asg.shiftTemplateId) ||
-                        allowedTemplates.find(t => t.code.toLowerCase() === asg.shiftTemplateId?.toLowerCase()) ||
-                        allowedTemplates.find(t => t.code.toLowerCase() === asg.shiftCode?.toLowerCase()) ||
-                        allowedTemplates.find(t => t.name.toLowerCase().includes(asg.shiftName?.toLowerCase())) ||
-                        defaultWorkingTemplate;
-      }
-
-      const key = `${asg.date}_${asg.primaryAgentId}`;
-      assignedKeySet.add(key);
-
-      enrichedAssignments.push({
-        id: `asg-ai-${Date.now()}-${idx}`,
-        date: asg.date,
-        teamId: team.id,
-        shiftTemplateId: finalTemplate.id,
-        shiftName: finalTemplate.name,
-        shiftCode: finalTemplate.code,
-        startTime: finalTemplate.startTime,
-        endTime: finalTemplate.endTime,
-        durationHours: finalTemplate.durationHours,
-        color: finalTemplate.color,
-        primaryAgentId: asg.primaryAgentId,
-        backupAgent1Id: isOffShift ? null : (asg.backupAgent1Id || null),
-        backupAgent2Id: isOffShift ? null : (asg.backupAgent2Id || null),
-        status: 'scheduled',
-        isHandedOver: false,
-        handoverDetails: null,
-        notes: asg.notes || (isOffShift ? 'Haftalık İzin / OFF' : 'Pioneers AI Tarafından Optimize Edildi')
-      });
-    });
-
-    // Ensure every agent has an assignment for every day (fill missing with OFF)
-    days.forEach(day => {
-      agents.forEach(agent => {
-        const key = `${day.iso}_${agent.id}`;
-        if (!assignedKeySet.has(key)) {
-          enrichedAssignments.push({
-            id: `asg-ai-fill-${day.iso}-${agent.id}`,
-            date: day.iso,
-            teamId: team.id,
-            shiftTemplateId: 's_off',
-            shiftName: 'İzinli / OFF',
-            shiftCode: 'OFF',
-            startTime: 'OFF',
-            endTime: 'OFF',
-            durationHours: 0,
-            color: '#64748b',
-            primaryAgentId: agent.id,
-            backupAgent1Id: null,
-            backupAgent2Id: null,
-            status: 'scheduled',
-            isHandedOver: false,
-            handoverDetails: null,
-            notes: 'Haftalık Dinlenme / OFF'
-          });
-        }
-      });
-    });
-
-    return {
-      success: true,
-      assignments: enrichedAssignments,
-      auditReport: parsed.auditReport || generateHeuristicAudit(team, agents, enrichedAssignments, customInstructions),
-      source: 'Pioneers AI (Canlı Motor - Gemini 3.6)'
-    };
-  } catch (err) {
-    console.warn('Pioneers AI Canlı API hatası oluştu, akıllı yerel kural motoru devreye giriyor:', err);
-    const localResult = generateLocalSmartSchedule(team, agents, days, customInstructions);
-    return {
-      success: true,
-      assignments: localResult.assignments,
-      auditReport: localResult.auditReport,
-      source: 'Pioneers AI (Akıllı Kural Motoru)'
-    };
-  }
+  return {
+    success: true,
+    assignments: solverResult.assignments,
+    auditReport,
+    source: 'Pioneers WFM Engine'
+  };
 }
 
 /**
