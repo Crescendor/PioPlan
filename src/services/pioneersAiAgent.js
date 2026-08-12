@@ -81,7 +81,27 @@ LÜTFEN SADECE AŞAĞIDAKİ KOMPAKT VE GEÇERLİ JSON FORMATINI DÖNDÜR:
 }
 `;
 
-  let lastError = null;
+  const structuredSchema = {
+    type: 'OBJECT',
+    properties: {
+      summary: { type: 'STRING' },
+      assignments: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            date: { type: 'STRING' },
+            agentId: { type: 'STRING' },
+            shiftId: { type: 'STRING' },
+            b1: { type: 'STRING' },
+            b2: { type: 'STRING' }
+          },
+          required: ['date', 'agentId', 'shiftId']
+        }
+      }
+    },
+    required: ['summary', 'assignments']
+  };
 
   for (const modelName of MODELS_TO_TRY) {
     try {
@@ -97,6 +117,7 @@ LÜTFEN SADECE AŞAĞIDAKİ KOMPAKT VE GEÇERLİ JSON FORMATINI DÖNDÜR:
           systemInstruction: { parts: [{ text: systemInstruction }] },
           generationConfig: {
             responseMimeType: 'application/json',
+            responseSchema: structuredSchema,
             temperature: 0.1,
             maxOutputTokens: 8192
           }
