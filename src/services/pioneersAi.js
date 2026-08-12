@@ -32,7 +32,8 @@ async function callGeminiApi(promptText, systemInstruction = '', responseSchemaJ
 
   for (const modelName of MODELS_TO_TRY) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const cleanKey = (apiKey || '').trim();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
       const body = {
         contents: [
@@ -57,7 +58,11 @@ async function callGeminiApi(promptText, systemInstruction = '', responseSchemaJ
 
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': cleanKey
+        },
+        credentials: 'omit',
         body: JSON.stringify(body)
       });
 

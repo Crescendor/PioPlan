@@ -31,13 +31,12 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
   const {
     teams,
     agents,
+    assignments,
     selectedTeamId,
     currentDate,
     period,
     setPeriod,
-    assignments,
-    setAssignments,
-    setAiAuditReport,
+    applyAgentSchedule,
     auditCurrentScheduleAi,
     notify
   } = usePlan();
@@ -89,13 +88,9 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
 
     const monday = getMondayOfWeek(new Date(currentDate));
     const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());
-    const plannedDateSet = new Set(days.map(d => d.iso));
 
-    // Update state with new assignments
-    setAssignments(prev => [
-      ...prev.filter(a => !(a.teamId === currentTeam.id && plannedDateSet.has(a.date))),
-      ...agentResult.assignments
-    ]);
+    // Safely apply assignments using PlanContext's applyAgentSchedule
+    applyAgentSchedule(agentResult.assignments, days, currentTeam.id);
 
     try {
       confetti({

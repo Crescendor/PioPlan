@@ -518,6 +518,18 @@ export function PlanProvider({ children }) {
     }
   };
 
+  // Apply AI Agent Generated Schedule
+  const applyAgentSchedule = (newAssignments = [], periodDays = [], teamId = null) => {
+    if (!newAssignments.length) return;
+    const targetTeamId = teamId || selectedTeamId;
+    const plannedDateSet = new Set(periodDays.map(d => typeof d === 'string' ? d : d.iso));
+
+    setAssignments(prev => [
+      ...prev.filter(a => !(a.teamId === targetTeamId && plannedDateSet.has(a.date))),
+      ...newAssignments
+    ]);
+  };
+
   // Reset to Clean Initial Data
   const resetToFactoryDefaults = () => {
     setTeams(INITIAL_TEAMS);
@@ -532,9 +544,13 @@ export function PlanProvider({ children }) {
       value={{
         // Data
         teams,
+        setTeams,
         agents,
+        setAgents,
         assignments,
+        setAssignments,
         aiAuditReport,
+        setAiAuditReport,
         // Active selections & filters
         currentView,
         setCurrentView,
@@ -555,6 +571,7 @@ export function PlanProvider({ children }) {
         isAiAuditing,
         generateScheduleAi,
         auditCurrentScheduleAi,
+        applyAgentSchedule,
         // Operations
         addTeam,
         updateTeam,
