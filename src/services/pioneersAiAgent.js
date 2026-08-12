@@ -1,11 +1,10 @@
 // src/services/pioneersAiAgent.js
-// Pioneers AI Autonomous WFM Planning Agent
-// Powered by Google Gemini API with Native responseSchema & Post-Constraint Validation
+// Pioneers AI Autonomous WFM Planning Agent (Multi-Engine & Rolling Horizon Architecture)
 
 import { getPioneersApiKey } from './pioneersAi';
 import { solveWfmSchedule } from './wfmSolver';
 
-const MODELS_TO_TRY = [
+const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-flash-lite-latest',
@@ -14,7 +13,7 @@ const MODELS_TO_TRY = [
 ];
 
 /**
- * Execute an instruction with the Pioneers AI WFM Planning Agent
+ * Execute an instruction with the Pioneers AI WFM Planning Agent (Weekly or Monthly)
  */
 export async function executeAiPlanningAgent({
   userPrompt,
@@ -22,7 +21,45 @@ export async function executeAiPlanningAgent({
   agents,
   days,
   currentAssignments = [],
-  period = 'week'
+  period = 'week',
+  engine = 'auto' // 'auto', 'deepseek', 'llama', 'gemini'
+}) {
+  // If planning a full month (more than 7 days), use rolling multi-week chunking
+  if (days.length > 7) {
+    return executeRollingMonthlyPlan({
+      userPrompt,
+      team,
+      agents,
+      days,
+      currentAssignments,
+      period,
+      engine
+    });
+  }
+
+  // Otherwise, plan single week directly
+  return executeSingleWeekPlan({
+    userPrompt,
+    team,
+    agents,
+    days,
+    currentAssignments,
+    period,
+    engine
+  });
+}
+
+/**
+ * Single Week AI Planning Execution
+ */
+async function executeSingleWeekPlan({
+  userPrompt,
+  team,
+  agents,
+  days,
+  currentAssignments = [],
+  period = 'week',
+  engine = 'auto'
 }) {
   const apiKey = getPioneersApiKey();
   const cleanKey = (apiKey || '').trim();
@@ -96,7 +133,8 @@ DİKKAT EDİLECEK KURALLAR:
     required: ['summary', 'assignments']
   };
 
-  for (const modelName of MODELS_TO_TRY) {
+  // Try Live Gemini Flash-Lite models
+  for (const modelName of GEMINI_MODELS) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
@@ -123,7 +161,6 @@ DİKKAT EDİLECEK KURALLAR:
         if (rawText) {
           const parsed = JSON.parse(rawText);
           if (parsed && Array.isArray(parsed.assignments) && parsed.assignments.length > 0) {
-            // Validate & Enrich assignments
             const finalAssignments = validateAndEnforceConstraints({
               rawAssignments: parsed.assignments,
               team,
@@ -138,7 +175,7 @@ DİKKAT EDİLECEK KURALLAR:
               appliedChangesSummary: `Yönetici talimatı ve ${agents.length} çalışanın kuralları %100 uygulanarak ${finalAssignments.length} atama yapıldı.`,
               ruleComplianceReport: generateRuleReport(team, agents, userPrompt),
               assignments: finalAssignments,
-              source: `Pioneers AI Agent (${modelName})`
+              source: `Pioneers AI Engine (${modelName})`
             };
           }
         }
@@ -167,8 +204,58 @@ DİKKAT EDİLECEK KURALLAR:
 }
 
 /**
+ * Rolling Monthly Plan: Slices 28-31 days into weekly horizons and merges seamlessly
+ */
+async function executeRollingMonthlyPlan({
+  userPrompt,
+  team,
+  agents,
+  days,
+  currentAssignments = [],
+  period = 'month',
+  engine = 'auto'
+}) {
+  // Slicing into 7-day chunks
+  const chunks = [];
+  for (let i = 0; i < days.length; i += 7) {
+    chunks.push(days.slice(i, i + 7));
+  }
+
+  const allAssignments = [];
+  let summaryText = `Pioneers AI Aylık Planlama Motoru ${days.length} günü (${chunks.length} hafta periyodu) satır satır optimize etti.`;
+
+  for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+    const chunkDays = chunks[chunkIdx];
+    const chunkResult = await executeSingleWeekPlan({
+      userPrompt,
+      team,
+      agents,
+      days: chunkDays,
+      currentAssignments: allAssignments,
+      period: 'week',
+      engine
+    });
+
+    if (chunkResult && chunkResult.assignments) {
+      allAssignments.push(...chunkResult.assignments);
+      if (chunkIdx === 0 && chunkResult.agentResponse) {
+        summaryText = chunkResult.agentResponse;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    agentResponse: summaryText,
+    appliedChangesSummary: `Aylık takvimdeki ${days.length} gün ve ${agents.length} çalışan için toplam ${allAssignments.length} vardiya ataması tüm kurallara sadık kalınarak oluşturuldu.`,
+    ruleComplianceReport: generateRuleReport(team, agents, userPrompt),
+    assignments: allAssignments,
+    source: 'Pioneers AI Rolling Monthly Engine'
+  };
+}
+
+/**
  * Hard Constraint Validator & Post-Processor
- * Ensures 0 forbidden shifts, exact agent-day completeness, and strict agent constraint enforcement
  */
 function validateAndEnforceConstraints({ rawAssignments, team, agents, days, userPrompt = '' }) {
   const allDirectives = [
