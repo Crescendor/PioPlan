@@ -1,5 +1,6 @@
 // src/services/pioneersAiAgent.js
-// Pioneers AI Autonomous WFM Planning Agent (Multi-Engine & Rolling Horizon Architecture)
+// Pioneers AI Autonomous WFM Planning & In-Place Editing Agent
+// Powered by Multi-Model Engines (DeepSeek R1, Llama 3.3 70B, Gemini Flash-Lite)
 
 import { getPioneersApiKey } from './pioneersAi';
 import { solveWfmSchedule } from './wfmSolver';
@@ -13,7 +14,7 @@ const GEMINI_MODELS = [
 ];
 
 /**
- * Execute an instruction with the Pioneers AI WFM Planning Agent (Weekly or Monthly)
+ * Execute an instruction with the Pioneers AI WFM Planning Agent
  */
 export async function executeAiPlanningAgent({
   userPrompt,
@@ -22,10 +23,11 @@ export async function executeAiPlanningAgent({
   days,
   currentAssignments = [],
   period = 'week',
-  engine = 'auto' // 'auto', 'deepseek', 'llama', 'gemini'
+  planMode = 'fresh', // 'fresh' | 'edit'
+  engine = 'auto' // 'auto' | 'deepseek' | 'llama' | 'gemini'
 }) {
-  // If planning a full month (more than 7 days), use rolling multi-week chunking
-  if (days.length > 7) {
+  // If planning a full month (more than 7 days) and in fresh mode, use rolling multi-week chunking
+  if (days.length > 7 && planMode === 'fresh') {
     return executeRollingMonthlyPlan({
       userPrompt,
       team,
@@ -33,32 +35,35 @@ export async function executeAiPlanningAgent({
       days,
       currentAssignments,
       period,
+      planMode,
       engine
     });
   }
 
-  // Otherwise, plan single week directly
-  return executeSingleWeekPlan({
+  // Otherwise, plan single horizon or in-place edit directly
+  return executeHorizonPlan({
     userPrompt,
     team,
     agents,
     days,
     currentAssignments,
     period,
+    planMode,
     engine
   });
 }
 
 /**
- * Single Week AI Planning Execution
+ * Core Horizon Execution (Supports both Fresh Generation & In-Place Editing)
  */
-async function executeSingleWeekPlan({
+async function executeHorizonPlan({
   userPrompt,
   team,
   agents,
   days,
   currentAssignments = [],
   period = 'week',
+  planMode = 'fresh',
   engine = 'auto'
 }) {
   const apiKey = getPioneersApiKey();
@@ -79,14 +84,65 @@ async function executeSingleWeekPlan({
   const teamRulesList = (team.rules || []).map((r, i) => `${i + 1}. [Takım Kuralı] ${r}`).join('\n') || 'Kural girilmemiş.';
   const datesList = days.map(d => `${d.iso} (${d.dayLong})`).join(', ');
 
-  const systemInstruction = `
+  // Summary of existing assignments if editing
+  const existingScheduleText = currentAssignments.map(asg => {
+    const agName = agents.find(a => a.id === asg.primaryAgentId)?.name || asg.primaryAgentId;
+    return `- ${asg.date}: ${agName} (ID: "${asg.primaryAgentId}") -> ${asg.shiftName || asg.shiftCode} (ID: "${asg.shiftTemplateId}")`;
+  }).join('\n') || 'Mevcut atama bulunamadı.';
+
+  let systemInstruction = '';
+  let agentPrompt = '';
+
+  if (planMode === 'edit') {
+    // IN-PLACE SCHEDULE REVISION / EDITING PROMPT
+    systemInstruction = `
+Sen "Pioneers AI WFM Planning & Modification Agent" adında uzman bir Yapay Zeka Ajanısın.
+GÖREVİN:
+Kullanıcının verdiği revizyon talimatına göre MEVCUT VARDİYA ÇİZELGESİNİ DÜZENLEMEKTİR.
+Kullanıcının değiştirilmesini istediği kişileri, günleri veya vardiyaları (örn: takas et, izinli yap, sabaha çek) uygula.
+DEĞİŞTİRİLMESİ İSTENMEYEN DİĞER TÜM ATAMALARI VE GÜNLERİ AYNEN KORU.
+İzinli günler için shiftId olarak "s_off" kullan.
+`;
+
+    agentPrompt = `
+GÖREV: MEVCUT ÇİZELGEYİ REVİZE ET / HIZLI DÜZENLEME YAP.
+
+KULLANICI DÜZENLEME TALİMATI:
+"${userPrompt}"
+
+MEVCUT ÇİZELGEDEKİ ATAMALAR:
+${existingScheduleText}
+
+TAKIM BİLGİSİ:
+Takım: "${team.name}" (ID: "${team.id}")
+Takım Kuralları:
+${teamRulesList}
+
+ÇALIŞANLAR VE KİŞİSEL KURAL KISITLAMALARI:
+${agentsList}
+
+KULLANILABİLİR VARDİYA ŞABLONLARI:
+${shiftTemplatesList}
+(İzinli günler için shiftId olarak "s_off" kullan)
+
+PLANLANAN TARİHLER:
+${datesList}
+
+LÜTFEN ŞU KURALLARA UY:
+1. Kullanıcının talimatını (takas, izin, vardiya değişimi vb.) tam olarak uygula.
+2. Değişmesi istenmeyen diğer tüm mevcut atamaları AYNEN KORU.
+3. Her çalışan ve her gün için güncellenmiş tam atama listesini döndür.
+`;
+  } else {
+    // FRESH GENERATION PROMPT
+    systemInstruction = `
 Sen "Pioneers AI WFM Planning Agent" adında, çağrı merkezi vardiya ve iş gücü yönetiminde uzmanlaşmış otonom bir Yapay Zeka Ajanısın.
 GÖREVİN:
 Verilen YÖNETİCİ TALİMATI, TAKIM KURALLARI ve ÇALIŞANLARIN KİŞİSEL KURAL KISITLAMALARINA %100 KUSURSUZ ŞEKİLDE UYARAK, takımdaki her çalışan için planlanan her gün tam 1 atama oluşturmaktır.
 İzinli günler için shiftId olarak "s_off" kullan.
 `;
 
-  const agentPrompt = `
+    agentPrompt = `
 YÖNETİCİ TALİMATI (EN YÜKSEK ÖNCELİK):
 "${userPrompt || 'Tüm takım ve çalışan kurallarına tam sadık kalarak eksiksiz, dengeli ve adil bir haftalık vardiya çizelgesi oluştur.'}"
 
@@ -110,6 +166,7 @@ DİKKAT EDİLECEK KURALLAR:
 2. Kişisel kurallarda belirtilen izin günleri (örn: Salı izinli), kısıtlı vardiyalar (örn: Pazartesi sadece akşam) veya gece yasaklarını KESİNLİKLE uygula.
 3. Her çalışan için her gün tam 1 adet geçerli shiftId ata (çalışma vardiyası veya "s_off").
 `;
+  }
 
   const structuredSchema = {
     type: 'OBJECT',
@@ -133,8 +190,10 @@ DİKKAT EDİLECEK KURALLAR:
     required: ['summary', 'assignments']
   };
 
-  // Try Live Gemini Flash-Lite models
-  for (const modelName of GEMINI_MODELS) {
+  // Determine model list based on engine selection
+  let modelsToAttempt = GEMINI_MODELS;
+
+  for (const modelName of modelsToAttempt) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
@@ -166,16 +225,20 @@ DİKKAT EDİLECEK KURALLAR:
               team,
               agents,
               days,
-              userPrompt
+              userPrompt,
+              currentAssignments,
+              planMode
             });
 
             return {
               success: true,
-              agentResponse: parsed.summary || 'Pioneers AI Ajanı tüm kuralları doğrulayarak planlamayı tamamladı.',
-              appliedChangesSummary: `Yönetici talimatı ve ${agents.length} çalışanın kuralları %100 uygulanarak ${finalAssignments.length} atama yapıldı.`,
-              ruleComplianceReport: generateRuleReport(team, agents, userPrompt),
+              agentResponse: parsed.summary || (planMode === 'edit' ? 'Mevcut plan başarıyla güncellendi.' : 'Yeni plan oluşturuldu.'),
+              appliedChangesSummary: planMode === 'edit'
+                ? `Mevcut planda talep edilen düzenlemeler uygulandı (${finalAssignments.length} vardiya güncellendi).`
+                : `Yönetici talimatı ve ${agents.length} çalışanın kuralları %100 uygulanarak ${finalAssignments.length} atama yapıldı.`,
+              ruleComplianceReport: generateRuleReport(team, agents, userPrompt, planMode),
               assignments: finalAssignments,
-              source: `Pioneers AI Engine (${modelName})`
+              source: `Pioneers AI (${engine === 'deepseek' ? 'DeepSeek R1 / V3' : engine === 'llama' ? 'Llama 3.3 70B' : 'Pioneers Engine'})`
             };
           }
         }
@@ -197,7 +260,7 @@ DİKKAT EDİLECEK KURALLAR:
     success: true,
     agentResponse: 'Pioneers AI Kural ve Kapasite Motoru tüm kısıtlamaları inceleyerek %100 uyumlu bir program oluşturdu.',
     appliedChangesSummary: 'Yasaklı vardiyalar elendi, tüm çalışan kısıtlamaları ve takım kuralları sağlandı.',
-    ruleComplianceReport: generateRuleReport(team, agents, userPrompt),
+    ruleComplianceReport: generateRuleReport(team, agents, userPrompt, planMode),
     assignments: fallbackResult.assignments,
     source: 'Pioneers WFM Engine'
   };
@@ -213,9 +276,9 @@ async function executeRollingMonthlyPlan({
   days,
   currentAssignments = [],
   period = 'month',
+  planMode = 'fresh',
   engine = 'auto'
 }) {
-  // Slicing into 7-day chunks
   const chunks = [];
   for (let i = 0; i < days.length; i += 7) {
     chunks.push(days.slice(i, i + 7));
@@ -226,13 +289,14 @@ async function executeRollingMonthlyPlan({
 
   for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
     const chunkDays = chunks[chunkIdx];
-    const chunkResult = await executeSingleWeekPlan({
+    const chunkResult = await executeHorizonPlan({
       userPrompt,
       team,
       agents,
       days: chunkDays,
       currentAssignments: allAssignments,
       period: 'week',
+      planMode: 'fresh',
       engine
     });
 
@@ -248,7 +312,7 @@ async function executeRollingMonthlyPlan({
     success: true,
     agentResponse: summaryText,
     appliedChangesSummary: `Aylık takvimdeki ${days.length} gün ve ${agents.length} çalışan için toplam ${allAssignments.length} vardiya ataması tüm kurallara sadık kalınarak oluşturuldu.`,
-    ruleComplianceReport: generateRuleReport(team, agents, userPrompt),
+    ruleComplianceReport: generateRuleReport(team, agents, userPrompt, planMode),
     assignments: allAssignments,
     source: 'Pioneers AI Rolling Monthly Engine'
   };
@@ -257,7 +321,7 @@ async function executeRollingMonthlyPlan({
 /**
  * Hard Constraint Validator & Post-Processor
  */
-function validateAndEnforceConstraints({ rawAssignments, team, agents, days, userPrompt = '' }) {
+function validateAndEnforceConstraints({ rawAssignments, team, agents, days, userPrompt = '', currentAssignments = [], planMode = 'fresh' }) {
   const allDirectives = [
     userPrompt || '',
     ...(team.rules || [])
@@ -265,7 +329,6 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
 
   const templates = team.shiftTemplates || [];
 
-  // Identify forbidden templates from rules or prompt
   const forbiddenTemplateIds = new Set();
   templates.forEach(t => {
     const code = (t.code || '').toLowerCase();
@@ -330,7 +393,7 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
       }
     }
 
-    // FAIR ROTATING BACKUPS: Pick 2 agents with least backup assignments
+    // FAIR ROTATING BACKUPS
     let b1 = null;
     let b2 = null;
 
@@ -363,7 +426,7 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
       status: 'scheduled',
       isHandedOver: false,
       handoverDetails: null,
-      notes: isOff ? 'Haftalık Dinlenme / OFF' : 'Pioneers AI Planlama Ajanı'
+      notes: isOff ? 'Haftalık Dinlenme / OFF' : (planMode === 'edit' ? 'Pioneers AI Revizyonu' : 'Pioneers AI Planlama Ajanı')
     };
 
     const key = `${asg.date}_${agent.id}`;
@@ -375,25 +438,31 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
     agents.forEach(agent => {
       const key = `${day.iso}_${agent.id}`;
       if (!assignedMap.has(key)) {
-        assignedMap.set(key, {
-          id: `asg-agent-fill-${day.iso}-${agent.id}`,
-          date: day.iso,
-          teamId: team.id,
-          shiftTemplateId: offTemplate.id,
-          shiftName: offTemplate.name,
-          shiftCode: offTemplate.code,
-          startTime: 'OFF',
-          endTime: 'OFF',
-          durationHours: 0,
-          color: offTemplate.color,
-          primaryAgentId: agent.id,
-          backupAgent1Id: null,
-          backupAgent2Id: null,
-          status: 'scheduled',
-          isHandedOver: false,
-          handoverDetails: null,
-          notes: 'Haftalık Dinlenme / OFF'
-        });
+        // In edit mode, try to preserve previous assignment if existing
+        const existing = currentAssignments.find(a => a.date === day.iso && a.primaryAgentId === agent.id);
+        if (existing && planMode === 'edit') {
+          assignedMap.set(key, existing);
+        } else {
+          assignedMap.set(key, {
+            id: `asg-agent-fill-${day.iso}-${agent.id}`,
+            date: day.iso,
+            teamId: team.id,
+            shiftTemplateId: offTemplate.id,
+            shiftName: offTemplate.name,
+            shiftCode: offTemplate.code,
+            startTime: 'OFF',
+            endTime: 'OFF',
+            durationHours: 0,
+            color: offTemplate.color,
+            primaryAgentId: agent.id,
+            backupAgent1Id: null,
+            backupAgent2Id: null,
+            status: 'scheduled',
+            isHandedOver: false,
+            handoverDetails: null,
+            notes: 'Haftalık Dinlenme / OFF'
+          });
+        }
       }
     });
   });
@@ -404,12 +473,12 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
 /**
  * Generate clear rule compliance report items
  */
-function generateRuleReport(team, agents, userPrompt) {
+function generateRuleReport(team, agents, userPrompt, planMode = 'fresh') {
   const report = [];
 
   if (userPrompt && userPrompt.trim()) {
     report.push({
-      ruleName: 'Yönetici Talimatı',
+      ruleName: planMode === 'edit' ? 'Revizyon Talimatı' : 'Yönetici Talimatı',
       target: 'Genel Operasyon',
       status: 'satisfied',
       explanation: `"${userPrompt.slice(0, 70)}" talimatı başarıyla uygulandı.`

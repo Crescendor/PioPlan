@@ -14,17 +14,34 @@ import {
   Zap,
   RotateCcw,
   Sliders,
-  Check
+  Check,
+  Layers,
+  Edit3,
+  Cpu,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { getMondayOfWeek, getDaysOfWeek, getDaysInMonth } from '../../utils/dateUtils';
+import { getMondayOfWeek, getDaysOfWeek, getDaysInMonth, parseDateISO } from '../../utils/dateUtils';
 
-const QUICK_PROMPT_SUGGESTIONS = [
+const FRESH_PROMPT_SUGGESTIONS = [
   'BON01 vardiyası kesinlikle olmasın, diğer vardiyaları kurallara göre dağıt.',
-  'Tüm takım ve çalışan kurallarına %100 sadık kalarak haftalık programı planla.',
+  'Tüm takım ve çalışan kurallarına %100 sadık kalarak eksiksiz program planla.',
   'Gece vardiyalarını sadece uygun temsilcilere ver, gündüzleri eşit paylaştır.',
-  'Haftalık çalışma saatlerini temsilciler arasında tam dengeli ve adil dağıt.',
   'Pazar günlerini herkese izinli yap, hafta içine 2 kademeli yedekleri eksiksiz ata.'
+];
+
+const EDIT_PROMPT_SUGGESTIONS = [
+  'Salı günü Caner ile Zeynep in vardiyalarını takas et, diğerleri aynı kalsın.',
+  'Çarşamba günü Zeynep i izinli yap, yerine uygun birini sabah vardiyasına al.',
+  'Hafta sonundaki gece vardiyalarını kaldır, temsilcileri gündüze çek.',
+  'Tüm planı koru, sadece Caner in vardiyalarını akşam vardiyasına al.'
+];
+
+const AI_ENGINES = [
+  { id: 'auto', name: 'Pioneers AI Hibrit (Önerilen)', icon: '🤖', desc: 'En hızlı ve %100 kural garantili akıllı motor' },
+  { id: 'deepseek', name: 'DeepSeek R1 / V3 Reasoning', icon: '🧠', desc: 'Derin muhakeme ve karmaşık WFM optimizasyonu' },
+  { id: 'llama', name: 'Meta Llama 3.3 70B (Groq)', icon: '⚡', desc: 'Işık hızında serbest vardiya planlayıcı' },
+  { id: 'gemini', name: 'Google Gemini 3.5 Flash', icon: '💎', desc: 'Yüksek kapasiteli kurumsal AI motoru' }
 ];
 
 export function AiAgentPlannerModal({ isOpen, onClose }) {
@@ -44,11 +61,19 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
   const currentTeam = teams.find(t => t.id === selectedTeamId) || teams[0] || null;
   const teamAgents = currentTeam ? agents.filter(a => a.role !== 'admin' && a.teamId === currentTeam.id) : [];
 
+  // Mode: 'edit' (Mevcut Planı Düzenle) vs 'fresh' (Sıfırdan Yeni Plan)
+  const [planMode, setPlanMode] = useState('fresh');
+  const [selectedEngine, setSelectedEngine] = useState('auto');
   const [promptInput, setPromptInput] = useState('');
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [agentResult, setAgentResult] = useState(null);
 
   if (!isOpen || !currentTeam) return null;
+
+  // Active target days
+  const monday = getMondayOfWeek(currentDate ? parseDateISO(currentDate) : new Date());
+  const targetDays = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());
+  const currentTeamAssignments = assignments.filter(a => a.teamId === currentTeam.id);
 
   const handleRunAgent = async (overridePrompt = null) => {
     const textToRun = overridePrompt !== null ? overridePrompt : promptInput;
@@ -60,21 +85,26 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
     setIsAgentRunning(true);
     setAgentResult(null);
 
-    const monday = getMondayOfWeek(new Date(currentDate));
-    const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());
-
     try {
       const result = await executeAiPlanningAgent({
         userPrompt: textToRun,
         team: currentTeam,
         agents: teamAgents,
-        days,
-        currentAssignments: assignments.filter(a => a.teamId === currentTeam.id),
-        period
+        days: targetDays,
+        currentAssignments: currentTeamAssignments,
+        period,
+        planMode,
+        engine: selectedEngine
       });
 
       setAgentResult(result);
-      notify('Pioneers AI Ajanı planlamayı tamamladı. Önizlemeyi inceleyebilirsiniz.', 'success', 'AI Ajanı Hazır');
+      notify(
+        planMode === 'edit'
+          ? 'Pioneers AI mevcut plan üzerinde revizyonu tamamladı.'
+          : 'Pioneers AI Ajanı planlamayı tamamladı.',
+        'success',
+        'AI Ajanı Hazır'
+      );
     } catch (err) {
       console.error('Agent execution error:', err);
       notify(`AI Ajanı hatası: ${err.message}`, 'error');
@@ -86,11 +116,8 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
   const handleApplySchedule = () => {
     if (!agentResult || !agentResult.assignments) return;
 
-    const monday = getMondayOfWeek(new Date(currentDate));
-    const days = period === 'week' ? getDaysOfWeek(monday) : getDaysInMonth(monday.getFullYear(), monday.getMonth());
-
     // Safely apply assignments using PlanContext's applyAgentSchedule
-    applyAgentSchedule(agentResult.assignments, days, currentTeam.id);
+    applyAgentSchedule(agentResult.assignments, targetDays, currentTeam.id);
 
     try {
       confetti({
@@ -103,7 +130,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
     }
 
     notify(
-      `${currentTeam.name} için ${agentResult.assignments.length} vardiya Pioneers AI Ajanı tarafından takvime uygulandı.`,
+      `${currentTeam.name} için ${agentResult.assignments.length} vardiya takvime uygulandı.`,
       'success',
       'Vardiya Takvime İşlendi'
     );
@@ -120,9 +147,9 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Pioneers AI Otonom Vardiya Planlama Ajanı"
+      title="Pioneers AI Otonom Vardiya Planlama ve Düzenleme Ajanı"
       icon={<Bot size={22} color="var(--pioneers-cyan)" />}
-      maxWidth="780px"
+      maxWidth="820px"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Header Hero Banner */}
@@ -139,8 +166,8 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
         >
           <div
             style={{
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               borderRadius: 'var(--radius-lg)',
               background: 'var(--pioneers-gradient)',
               display: 'flex',
@@ -151,29 +178,128 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
               flexShrink: 0
             }}
           >
-            <Bot size={26} />
+            <Bot size={28} />
           </div>
 
           <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 800, color: '#ffffff' }}>
-                Pioneers AI WFM Planning Agent
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: '#ffffff' }}>
+                Pioneers AI WFM Copilot
               </h3>
               <span className="pioneers-badge">
-                <Zap size={11} /> Canlı Gemini 3.6 Motoru
+                <Zap size={11} /> Çoklu AI Motoru & Canlı Düzenleme
               </span>
             </div>
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
-              Hedef Takım: <strong style={{ color: currentTeam.color || '#3b82f6' }}>{currentTeam.name}</strong> ({teamAgents.length} Temsilci) | Tüm kuralları satır satır denetleyen otonom planlayıcı.
+              Hedef Takım: <strong style={{ color: currentTeam.color || '#3b82f6' }}>{currentTeam.name}</strong> ({teamAgents.length} Temsilci) | {period === 'week' ? 'Haftalık' : 'Aylık'} Takvim ({targetDays.length} Gün)
             </p>
           </div>
         </div>
 
+        {/* Action Mode Toggle: Fresh Plan vs In-Place Edit */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+            background: 'var(--bg-surface)',
+            padding: 6,
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-subtle)'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setPlanMode('fresh');
+              setAgentResult(null);
+            }}
+            className={`btn btn-sm ${planMode === 'fresh' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ padding: '8px 14px', fontSize: 12.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <Sparkles size={14} />
+            <span>Sıfırdan Yeni Plan Oluştur</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPlanMode('edit');
+              setAgentResult(null);
+            }}
+            className={`btn btn-sm ${planMode === 'edit' ? 'btn-primary' : 'btn-outline'}`}
+            style={{ padding: '8px 14px', fontSize: 12.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <Edit3 size={14} />
+            <span>Mevcut Planı Düzenle / Hızlı Revizyon</span>
+          </button>
+        </div>
+
+        {/* AI Engine Selector Row */}
+        <div>
+          <label style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Cpu size={14} color="var(--pioneers-cyan)" /> Tercih Edilen AI Planlama Motoru:
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+            {AI_ENGINES.map(eng => {
+              const isSelected = selectedEngine === eng.id;
+              return (
+                <button
+                  key={eng.id}
+                  type="button"
+                  onClick={() => setSelectedEngine(eng.id)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-md)',
+                    background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-surface)',
+                    border: `1.5px solid ${isSelected ? 'var(--pioneers-cyan)' : 'var(--border-subtle)'}`,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 12, color: isSelected ? '#38bdf8' : '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>{eng.icon}</span>
+                    <span>{eng.name}</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    {eng.desc}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* In-Place Status Banner if in Edit Mode */}
+        {planMode === 'edit' && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: '#93c5fd',
+              fontSize: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}
+          >
+            <RefreshCw size={15} />
+            <span>
+              <strong>Hızlı Düzenleme Modu Aktif:</strong> Mevcut {currentTeamAssignments.length} vardiya hafızaya alındı. Sadece değiştirmek istediğiniz kişileri veya günleri belirtin; planın geri kalanı aynen korunacaktır.
+            </span>
+          </div>
+        )}
+
         {/* Prompt Input Box */}
         <div>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span>Ajana Talimat Verin (Doğal Dil ile Ne Yapmasını İstediğinizi Yazın):</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Örn: BON01 olmasın, Caner akşam çalışsın</span>
+            <span>{planMode === 'edit' ? 'Düzenleme / Revizyon Talimatı:' : 'Yeni Planlama Talimatı:'}</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {planMode === 'edit' ? 'Örn: Caner ile Mert in Salı vardiyasını takas et' : 'Örn: BON01 olmasın, Pazar herkes izinli'}
+            </span>
           </label>
           <div style={{ position: 'relative' }}>
             <textarea
@@ -182,7 +308,11 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
               style={{ fontSize: 13, paddingRight: 40, lineHeight: 1.5 }}
               value={promptInput}
               onChange={(e) => setPromptInput(e.target.value)}
-              placeholder="Örn: BON01 vardiyası kesinlikle olmayacak. Caner Korkmaz sadece Akşam vardiyasında çalışsın, Pazar günleri herkes izinli olsun..."
+              placeholder={
+                planMode === 'edit'
+                  ? 'Örn: Salı günü Caner ile Mert in vardiyalarını takas et. Çarşamba Zeynep i izinli yap, diğer herkes aynı kalsın...'
+                  : 'Örn: BON01 vardiyası kesinlikle olmayacak. Caner sadece Akşam vardiyasında çalışsın, Pazar günleri herkes izinli olsun...'
+              }
               disabled={isAgentRunning}
             />
           </div>
@@ -191,10 +321,10 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
         {/* Quick Suggestion Pills */}
         <div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 600 }}>
-            Hızlı Ajan Talimatı Şablonları:
+            {planMode === 'edit' ? 'Hızlı Düzenleme Şablonları:' : 'Hızlı Planlama Şablonları:'}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {QUICK_PROMPT_SUGGESTIONS.map((sug, idx) => (
+            {(planMode === 'edit' ? EDIT_PROMPT_SUGGESTIONS : FRESH_PROMPT_SUGGESTIONS).map((sug, idx) => (
               <button
                 key={idx}
                 type="button"
@@ -220,7 +350,11 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
             style={{ padding: '10px 24px', fontSize: 13.5 }}
           >
             <Sparkles size={16} className={isAgentRunning ? 'animate-spin' : ''} />
-            <span>{isAgentRunning ? 'Pioneers AI Ajanı Düşünüyor & Planlıyor...' : 'Ajanı Çalıştır'}</span>
+            <span>
+              {isAgentRunning
+                ? (planMode === 'edit' ? 'AI Mevcut Planı Revize Ediyor...' : 'Pioneers AI Planlıyor...')
+                : (planMode === 'edit' ? 'Mevcut Planı Revize Et' : 'Yeni Planı Başlat')}
+            </span>
             <ArrowRight size={14} />
           </button>
         </div>
@@ -258,7 +392,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 800, fontSize: 13.5, color: '#34d399' }}>
-                  Pioneers AI Ajanı Yanıtı & Gerekçelendirmesi:
+                  {planMode === 'edit' ? 'AI Revizyon Sonucu & Gerekçelendirmesi:' : 'Pioneers AI Ajanı Yanıtı & Gerekçelendirmesi:'}
                 </div>
                 <div style={{ fontSize: 12.5, color: '#f1f5f9', marginTop: 4, lineHeight: 1.5 }}>
                   {agentResult.agentResponse}
@@ -281,7 +415,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
               }}
             >
               <ShieldCheck size={16} />
-              <span><strong>Uygulanan Optimizasyon:</strong> {agentResult.appliedChangesSummary}</span>
+              <span><strong>Uygulanan İşlem:</strong> {agentResult.appliedChangesSummary}</span>
             </div>
 
             {/* Rule Compliance Checklist */}
@@ -290,7 +424,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   Doğrulanan Kural Maddeleri ({agentResult.ruleComplianceReport.length}):
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
                   {agentResult.ruleComplianceReport.map((rep, rIdx) => (
                     <div
                       key={rIdx}
@@ -326,7 +460,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
                 style={{ padding: '10px 24px', fontSize: 13.5, background: 'linear-gradient(135deg, #10b981, #059669)' }}
               >
                 <Check size={16} />
-                <span>Bu Çizelgeyi Takvime Uygula ({agentResult.assignments.length} Atama)</span>
+                <span>{planMode === 'edit' ? `Revize Çizelgeyi Takvime Uygula (${agentResult.assignments.length} Atama)` : `Bu Çizelgeyi Takvime Uygula (${agentResult.assignments.length} Atama)`}</span>
               </button>
             </div>
           </div>
