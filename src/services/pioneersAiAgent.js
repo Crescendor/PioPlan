@@ -1,6 +1,6 @@
 // src/services/pioneersAiAgent.js
 // Pioneers AI Autonomous WFM Planning & In-Place Editing Agent
-// Powered by Multi-Model Engines (DeepSeek R1, Llama 3.3 70B, Gemini Flash-Lite)
+// Powered by Multi-Model Engines with Complete Team Schedule Guarantee
 
 import { getPioneersApiKey } from './pioneersAi';
 import { solveWfmSchedule } from './wfmSolver';
@@ -69,7 +69,29 @@ async function executeHorizonPlan({
   const apiKey = getPioneersApiKey();
   const cleanKey = (apiKey || '').trim();
 
-  // 1. Prepare structured context
+  // 1. Generate full baseline schedule using WFM Solver to ensure 100% team coverage
+  const baselineResult = solveWfmSchedule({
+    team,
+    agents,
+    days,
+    customDirectives: userPrompt
+  });
+
+  const baselineAssignments = baselineResult.assignments || [];
+
+  // If engine is 'auto' and fresh mode with standard prompt, the WFM Solver is 100% optimal and instant
+  if (engine === 'auto' && planMode === 'fresh' && (!userPrompt || userPrompt.length < 5)) {
+    return {
+      success: true,
+      agentResponse: 'Pioneers AI Kural ve Kapasite Motoru takımdaki tüm temsilciler için eksiksiz ve dengeli bir program oluşturdu.',
+      appliedChangesSummary: `Takımdaki ${agents.length} temsilcinin tamamına haftalık vardiyaları ve izinleri adil şekilde dağıtıldı (${baselineAssignments.length} atama yapıldı).`,
+      ruleComplianceReport: generateRuleReport(team, agents, userPrompt, planMode),
+      assignments: baselineAssignments,
+      source: 'Pioneers AI Engine'
+    };
+  }
+
+  // 2. Prepare structured context for LLM
   const shiftTemplatesList = (team.shiftTemplates || [])
     .map(s => `- ID: "${s.id}" | Kod: "${s.code}" | Ad: "${s.name}" (${s.startTime}-${s.endTime})`)
     .join('\n');
@@ -84,17 +106,19 @@ async function executeHorizonPlan({
   const teamRulesList = (team.rules || []).map((r, i) => `${i + 1}. [Takım Kuralı] ${r}`).join('\n') || 'Kural girilmemiş.';
   const datesList = days.map(d => `${d.iso} (${d.dayLong})`).join(', ');
 
-  // Summary of existing assignments if editing
-  const existingScheduleText = currentAssignments.map(asg => {
+  const activeBaseSchedule = planMode === 'edit' && currentAssignments.length > 0
+    ? currentAssignments
+    : baselineAssignments;
+
+  const existingScheduleText = activeBaseSchedule.map(asg => {
     const agName = agents.find(a => a.id === asg.primaryAgentId)?.name || asg.primaryAgentId;
     return `- ${asg.date}: ${agName} (ID: "${asg.primaryAgentId}") -> ${asg.shiftName || asg.shiftCode} (ID: "${asg.shiftTemplateId}")`;
-  }).join('\n') || 'Mevcut atama bulunamadı.';
+  }).slice(0, 100).join('\n') || 'Mevcut atama bulunamadı.';
 
   let systemInstruction = '';
   let agentPrompt = '';
 
   if (planMode === 'edit') {
-    // IN-PLACE SCHEDULE REVISION / EDITING PROMPT
     systemInstruction = `
 Sen "Pioneers AI WFM Planning & Modification Agent" adında uzman bir Yapay Zeka Ajanısın.
 GÖREVİN:
@@ -131,14 +155,13 @@ ${datesList}
 LÜTFEN ŞU KURALLARA UY:
 1. Kullanıcının talimatını (takas, izin, vardiya değişimi vb.) tam olarak uygula.
 2. Değişmesi istenmeyen diğer tüm mevcut atamaları AYNEN KORU.
-3. Her çalışan ve her gün için güncellenmiş tam atama listesini döndür.
+3. Her çalışan ve her gün için güncellenmiş atama listesini döndür.
 `;
   } else {
-    // FRESH GENERATION PROMPT
     systemInstruction = `
 Sen "Pioneers AI WFM Planning Agent" adında, çağrı merkezi vardiya ve iş gücü yönetiminde uzmanlaşmış otonom bir Yapay Zeka Ajanısın.
 GÖREVİN:
-Verilen YÖNETİCİ TALİMATI, TAKIM KURALLARI ve ÇALIŞANLARIN KİŞİSEL KURAL KISITLAMALARINA %100 KUSURSUZ ŞEKİLDE UYARAK, takımdaki her çalışan için planlanan her gün tam 1 atama oluşturmaktır.
+Verilen YÖNETİCİ TALİMATI, TAKIM KURALLARI ve ÇALIŞANLARIN KİŞİSEL KURAL KISITLAMALARINA %100 KUSURSUZ ŞEKİLDE UYARAK, takımdaki HER ÇALIŞAN için planlanan her gün tam 1 atama oluşturmaktır.
 İzinli günler için shiftId olarak "s_off" kullan.
 `;
 
@@ -162,9 +185,10 @@ PLANLANACAK TARİHLER (${days.length} Gün):
 ${datesList}
 
 DİKKAT EDİLECEK KURALLAR:
-1. Yönetici talimatında veya takım kurallarında yasaklanan/olmasın denilen vardiyaları (örn: BON01) ASLA kullanma.
-2. Kişisel kurallarda belirtilen izin günleri (örn: Salı izinli), kısıtlı vardiyalar (örn: Pazartesi sadece akşam) veya gece yasaklarını KESİNLİKLE uygula.
-3. Her çalışan için her gün tam 1 adet geçerli shiftId ata (çalışma vardiyası veya "s_off").
+1. Takımdaki ${agents.length} temsilcinin TAMAMINA adil vardiyalar ata. Kimseyi boşta bırakma.
+2. Yönetici talimatında veya takım kurallarında yasaklanan/olmasın denilen vardiyaları (örn: BON01) ASLA kullanma.
+3. Kişisel kurallarda belirtilen izin günleri (örn: Cuma-Cumartesi izinli), kısıtlı vardiyalar veya gece yasaklarını KESİNLİKLE uygula.
+4. Her çalışan için her gün tam 1 adet geçerli shiftId ata (çalışma vardiyası veya "s_off").
 `;
   }
 
@@ -190,10 +214,8 @@ DİKKAT EDİLECEK KURALLAR:
     required: ['summary', 'assignments']
   };
 
-  // Determine model list based on engine selection
-  let modelsToAttempt = GEMINI_MODELS;
-
-  for (const modelName of modelsToAttempt) {
+  // Try LLM engines
+  for (const modelName of GEMINI_MODELS) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
@@ -226,7 +248,8 @@ DİKKAT EDİLECEK KURALLAR:
               agents,
               days,
               userPrompt,
-              currentAssignments,
+              currentAssignments: activeBaseSchedule,
+              baselineAssignments,
               planMode
             });
 
@@ -248,20 +271,13 @@ DİKKAT EDİLECEK KURALLAR:
     }
   }
 
-  // Fallback to WFM Constraint Solver
-  const fallbackResult = solveWfmSchedule({
-    team,
-    agents,
-    days,
-    customDirectives: userPrompt
-  });
-
+  // Fallback to complete WFM Solver Schedule
   return {
     success: true,
     agentResponse: 'Pioneers AI Kural ve Kapasite Motoru tüm kısıtlamaları inceleyerek %100 uyumlu bir program oluşturdu.',
-    appliedChangesSummary: 'Yasaklı vardiyalar elendi, tüm çalışan kısıtlamaları ve takım kuralları sağlandı.',
+    appliedChangesSummary: `Takımdaki ${agents.length} temsilcinin tamamına haftalık vardiyaları ve izinleri adil şekilde dağıtıldı (${baselineAssignments.length} atama yapıldı).`,
     ruleComplianceReport: generateRuleReport(team, agents, userPrompt, planMode),
-    assignments: fallbackResult.assignments,
+    assignments: baselineAssignments,
     source: 'Pioneers WFM Engine'
   };
 }
@@ -320,8 +336,18 @@ async function executeRollingMonthlyPlan({
 
 /**
  * Hard Constraint Validator & Post-Processor
+ * Guarantees that EVERY single agent has a complete, balanced work/off schedule!
  */
-function validateAndEnforceConstraints({ rawAssignments, team, agents, days, userPrompt = '', currentAssignments = [], planMode = 'fresh' }) {
+function validateAndEnforceConstraints({
+  rawAssignments,
+  team,
+  agents,
+  days,
+  userPrompt = '',
+  currentAssignments = [],
+  baselineAssignments = [],
+  planMode = 'fresh'
+}) {
   const allDirectives = [
     userPrompt || '',
     ...(team.rules || [])
@@ -371,6 +397,7 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
     agentWeeklyWorkCount[a.id] = 0;
   });
 
+  // 1. Process Raw Assignments from AI
   rawAssignments.forEach((asg, idx) => {
     const agentId = asg.agentId || asg.primaryAgentId;
     const shiftId = asg.shiftId || asg.shiftTemplateId;
@@ -384,7 +411,16 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
                 asg.shiftCode === 'OFF' ||
                 asg.startTime === 'OFF';
 
-    // HARD RULE: If agent already has 5 working shifts this week, force OFF (guaranteeing 2 days OFF)
+    // Respect agent fixed day-off rules (e.g. "Cuma, Cumartesi Sabit İzinli")
+    const d = days.find(day => day.iso === asg.date);
+    const dayName = (d?.dayLong || '').toLowerCase();
+    const agentRules = (agent.rules || []).map(r => r.toLowerCase());
+    for (const r of agentRules) {
+      if (dayName && r.includes(dayName) && (r.includes('izinli') || r.includes('çalışamaz'))) {
+        isOff = true;
+      }
+    }
+
     if (!isOff && (agentWeeklyWorkCount[agent.id] || 0) >= 5) {
       isOff = true;
     }
@@ -443,15 +479,20 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
     assignedMap.set(key, assignmentObj);
   });
 
-  // Ensure every agent has an assignment for every day
+  // 2. Fallback Fill: If AI omitted ANY agent or day, fill with the BALANCED baseline schedule (NOT OFF!)
   days.forEach(day => {
     agents.forEach(agent => {
       const key = `${day.iso}_${agent.id}`;
       if (!assignedMap.has(key)) {
-        // In edit mode, try to preserve previous assignment if existing
-        const existing = currentAssignments.find(a => a.date === day.iso && a.primaryAgentId === agent.id);
-        if (existing && planMode === 'edit') {
-          assignedMap.set(key, existing);
+        // Look up assignment from baseline schedule first
+        const baseAsg = baselineAssignments.find(a => a.date === day.iso && a.primaryAgentId === agent.id) ||
+                        currentAssignments.find(a => a.date === day.iso && a.primaryAgentId === agent.id);
+
+        if (baseAsg) {
+          assignedMap.set(key, {
+            ...baseAsg,
+            id: `asg-agent-filled-${day.iso}-${agent.id}`
+          });
         } else {
           assignedMap.set(key, {
             id: `asg-agent-fill-${day.iso}-${agent.id}`,
