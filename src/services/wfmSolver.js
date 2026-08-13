@@ -58,18 +58,26 @@ export function solveWfmSchedule({
     return false;
   };
 
+  // Calculate week offset based on start date for fair rotation across weeks
+  const startDate = new Date(days[0]?.iso || '2026-08-10');
+  const dayOfYear = Math.floor((startDate - new Date(startDate.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
+  const weekNumber = Math.floor(dayOfYear / 7);
+
   const assignments = [];
   const agentShiftCounts = {};
   const agentTotalHours = {};
+  const agentBackupCounts = {};
+
   agents.forEach(a => {
     agentShiftCounts[a.id] = 0;
     agentTotalHours[a.id] = 0;
+    agentBackupCounts[a.id] = 0;
   });
 
   // Track previous day shift for each agent to prevent back-to-back night-then-morning clashing
   const previousShiftType = {};
 
-  days.forEach((day) => {
+  days.forEach((day, dayIdx) => {
     const dayName = (day.dayLong || '').toLowerCase();
     const isWeekend = day.isWeekend;
     const isSunday = dayName.includes('pazar');
@@ -162,8 +170,12 @@ export function solveWfmSchedule({
       Math.max(availableTemplates.length, Math.round((agents.length * 5) / 6))
     );
 
-    // Available working pool for today: Sort by fewest shifts worked to ensure fair, balanced distribution
-    const availablePool = [...agents].sort((a, b) => {
+    // Fair Rotation of Candidate Pool based on week number and day index
+    const rotationShift = (weekNumber * 2 + dayIdx) % Math.max(1, agents.length);
+    const rotatedAgents = [...agents.slice(rotationShift), ...agents.slice(0, rotationShift)];
+
+    // Sort by fewest shifts worked to ensure fair, balanced distribution
+    const availablePool = rotatedAgents.sort((a, b) => {
       const diffShifts = (agentShiftCounts[a.id] || 0) - (agentShiftCounts[b.id] || 0);
       if (diffShifts !== 0) return diffShifts;
       return (agentTotalHours[a.id] || 0) - (agentTotalHours[b.id] || 0);
@@ -172,14 +184,14 @@ export function solveWfmSchedule({
     const assignedToday = new Set();
 
     // 1. Assign required shift slots across available templates
-    let tmplIdx = 0;
+    let tmplIdx = (weekNumber + dayIdx) % Math.max(1, availableTemplates.length);
     while (assignedToday.size < targetWorkingToday && availablePool.length > 0 && availableTemplates.length > 0) {
       const tmpl = availableTemplates[tmplIdx % availableTemplates.length];
       tmplIdx++;
 
       const candidateIdx = availablePool.findIndex(a => !assignedToday.has(a.id) && canAgentWorkTemplate(a, tmpl));
       if (candidateIdx === -1) {
-        if (tmplIdx > availableTemplates.length * 3) break;
+        if (tmplIdx > availableTemplates.length * 4) break;
         continue;
       }
 
@@ -200,10 +212,16 @@ export function solveWfmSchedule({
         previousShiftType[chosenAgent.id] = 'morning';
       }
 
-      // Pick distinct 1st and 2nd backups from other agents
-      const backups = agents.filter(a => a.id !== chosenAgent.id);
-      const b1 = backups[0]?.id || null;
-      const b2 = backups[1]?.id || null;
+      // FAIR ROTATING BACKUPS: Pick 2 agents who have served as backups the fewest times
+      const candidateBackups = agents
+        .filter(a => a.id !== chosenAgent.id)
+        .sort((a, b) => (agentBackupCounts[a.id] || 0) - (agentBackupCounts[b.id] || 0));
+
+      const b1 = candidateBackups[0]?.id || null;
+      const b2 = candidateBackups[1]?.id || null;
+
+      if (b1) agentBackupCounts[b1] = (agentBackupCounts[b1] || 0) + 1;
+      if (b2) agentBackupCounts[b2] = (agentBackupCounts[b2] || 0) + 1;
 
       assignments.push({
         id: `asg-wfm-${day.iso}-${tmpl.id}-${chosenAgent.id}`,
@@ -258,7 +276,8 @@ export function solveWfmSchedule({
     stats: {
       totalAssignments: assignments.length,
       agentShiftCounts,
-      agentTotalHours
+      agentTotalHours,
+      agentBackupCounts
     }
   };
 }

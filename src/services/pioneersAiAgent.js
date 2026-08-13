@@ -301,6 +301,8 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
 
   const finalAssignments = [];
   const assignedMap = new Map();
+  const backupCounts = {};
+  agents.forEach(a => { backupCounts[a.id] = 0; });
 
   rawAssignments.forEach((asg, idx) => {
     const agentId = asg.agentId || asg.primaryAgentId;
@@ -328,9 +330,21 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
       }
     }
 
-    const otherAgents = agents.filter(a => a.id !== agent.id);
-    const b1 = isOff ? null : (asg.b1 || asg.backupAgent1Id || otherAgents[0]?.id || null);
-    const b2 = isOff ? null : (asg.b2 || asg.backupAgent2Id || otherAgents[1]?.id || null);
+    // FAIR ROTATING BACKUPS: Pick 2 agents with least backup assignments
+    let b1 = null;
+    let b2 = null;
+
+    if (!isOff) {
+      const candidateBackups = agents
+        .filter(a => a.id !== agent.id)
+        .sort((a, b) => (backupCounts[a.id] || 0) - (backupCounts[b.id] || 0));
+
+      b1 = asg.b1 && asg.b1 !== agent.id ? asg.b1 : (candidateBackups[0]?.id || null);
+      b2 = asg.b2 && asg.b2 !== agent.id && asg.b2 !== b1 ? asg.b2 : (candidateBackups.find(c => c.id !== b1)?.id || null);
+
+      if (b1) backupCounts[b1] = (backupCounts[b1] || 0) + 1;
+      if (b2) backupCounts[b2] = (backupCounts[b2] || 0) + 1;
+    }
 
     const assignmentObj = {
       id: `asg-agent-${Date.now()}-${idx}`,
