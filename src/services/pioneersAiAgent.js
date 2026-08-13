@@ -365,7 +365,11 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
   const finalAssignments = [];
   const assignedMap = new Map();
   const backupCounts = {};
-  agents.forEach(a => { backupCounts[a.id] = 0; });
+  const agentWeeklyWorkCount = {};
+  agents.forEach(a => {
+    backupCounts[a.id] = 0;
+    agentWeeklyWorkCount[a.id] = 0;
+  });
 
   rawAssignments.forEach((asg, idx) => {
     const agentId = asg.agentId || asg.primaryAgentId;
@@ -375,10 +379,15 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
     const agent = agents.find(a => a.id === agentId);
     if (!agent) return;
 
-    const isOff = shiftId === 's_off' ||
-                  shiftId === 'OFF' ||
-                  asg.shiftCode === 'OFF' ||
-                  asg.startTime === 'OFF';
+    let isOff = shiftId === 's_off' ||
+                shiftId === 'OFF' ||
+                asg.shiftCode === 'OFF' ||
+                asg.startTime === 'OFF';
+
+    // HARD RULE: If agent already has 5 working shifts this week, force OFF (guaranteeing 2 days OFF)
+    if (!isOff && (agentWeeklyWorkCount[agent.id] || 0) >= 5) {
+      isOff = true;
+    }
 
     let selectedTemplate = offTemplate;
 
@@ -391,6 +400,7 @@ function validateAndEnforceConstraints({ rawAssignments, team, agents, days, use
       if (forbiddenTemplateIds.has(selectedTemplate.id)) {
         selectedTemplate = defaultWorkingTemplate;
       }
+      agentWeeklyWorkCount[agent.id] = (agentWeeklyWorkCount[agent.id] || 0) + 1;
     }
 
     // FAIR ROTATING BACKUPS

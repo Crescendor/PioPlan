@@ -1,11 +1,10 @@
 // src/services/wfmSolver.js
 // Industrial-Grade Operations Research WFM Schedule & Constraint Solver for Call Centers
-// 7/24 Continuous Operations: Guarantees every shift runs all 7 days of the week unless explicitly excluded.
+// Guarantees:
+// 1. Every employee gets at least 2 days OFF per week (max 5 shifts).
+// 2. All shift templates in the team's set run 7/7 across all operating days.
+// 3. Strict adherence to individual constraints and fair rotating backups.
 
-/**
- * Solve and generate an optimal, fair, 100% rule-compliant call center schedule
- * Every shift in the team's shift set runs 7 days a week (Monday-Sunday) by default.
- */
 export function solveWfmSchedule({
   team,
   agents,
@@ -58,10 +57,12 @@ export function solveWfmSchedule({
     return false;
   };
 
-  // Calculate week offset based on start date for fair rotation across weeks
   const startDate = new Date(days[0]?.iso || '2026-08-10');
   const dayOfYear = Math.floor((startDate - new Date(startDate.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
   const weekNumber = Math.floor(dayOfYear / 7);
+
+  // Maximum work shifts allowed per agent per 7-day week is 5 (guaranteeing at least 2 days OFF)
+  const MAX_SHIFTS_PER_WEEK = 5;
 
   const assignments = [];
   const agentShiftCounts = {};
@@ -111,6 +112,11 @@ export function solveWfmSchedule({
 
     // Helper: Check if an agent is legally and operationally allowed to work a template on this day
     const canAgentWorkTemplate = (agent, tmpl) => {
+      // HARD RULE: If agent has already reached 5 working shifts in this week, they MUST take a rest day (OFF)!
+      if ((agentShiftCounts[agent.id] || 0) >= MAX_SHIFTS_PER_WEEK) {
+        return false;
+      }
+
       const rules = (agent.rules || []).map(r => r.toLowerCase());
       const agName = agent.name.toLowerCase();
       const tmplName = (tmpl.name || '').toLowerCase();
@@ -238,7 +244,7 @@ export function solveWfmSchedule({
       }
     });
 
-    // 2. SCALE DAYTIME CAPACITY: Fill remaining working capacity so agents hit ~5 shifts/week
+    // 2. SCALE DAYTIME CAPACITY (Only for agents who have worked LESS than 5 shifts!)
     const targetWorkingToday = Math.min(agents.length, Math.max(availableTemplates.length, Math.round((agents.length * 5) / 7)));
     const daytimeTemplates = availableTemplates.filter(t => !t.name.toLowerCase().includes('gece') && !t.code.toLowerCase().includes('gec'));
 
