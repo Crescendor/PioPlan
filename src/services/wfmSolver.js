@@ -1,9 +1,10 @@
 // src/services/wfmSolver.js
 // Industrial-Grade Operations Research WFM Schedule & Constraint Solver for Call Centers
+// 7/24 Continuous Operations: Guarantees every shift runs all 7 days of the week unless explicitly excluded.
 
 /**
  * Solve and generate an optimal, fair, 100% rule-compliant call center schedule
- * Guarantees 100% mandatory coverage for every shift template in the team's shift set for all active working days.
+ * Every shift in the team's shift set runs 7 days a week (Monday-Sunday) by default.
  */
 export function solveWfmSchedule({
   team,
@@ -45,15 +46,13 @@ export function solveWfmSchedule({
     color: '#64748b'
   };
 
-  // Check if a day is globally OFF by team rules (e.g. "Pazar günleri herkes izinli")
+  // Check if a day is globally OFF by explicit rule
   const isDayGloballyOff = (day) => {
     const dName = (day.dayLong || '').toLowerCase();
-    if (dName.includes('pazar') && (allDirectives.includes('pazar günleri') || allDirectives.includes('pazar günü') || allDirectives.includes('pazar herkes') || allDirectives.includes('pazar operasyon') || allDirectives.includes('pazar kapalı') || allDirectives.includes('pazarları'))) {
-      if (allDirectives.includes('izinli') || allDirectives.includes('off') || allDirectives.includes('kapalı') || allDirectives.includes('tatil')) {
-        return true;
-      }
+    if (dName.includes('pazar') && (allDirectives.includes('pazar günleri kapalı') || allDirectives.includes('pazar kapalı') || allDirectives.includes('pazar herkes izinli') || allDirectives.includes('pazar tatil'))) {
+      return true;
     }
-    if (day.isWeekend && (allDirectives.includes('hafta sonu kapalı') || allDirectives.includes('hafta sonu herkes izinli') || allDirectives.includes('hafta sonu tatil'))) {
+    if (day.isWeekend && (allDirectives.includes('hafta sonu kapalı') || allDirectives.includes('hafta sonu herkes izinli'))) {
       return true;
     }
     return false;
@@ -85,7 +84,6 @@ export function solveWfmSchedule({
     const dayGloballyOff = isDayGloballyOff(day);
 
     if (dayGloballyOff) {
-      // Everyone gets OFF on globally closed days (e.g. Sunday)
       agents.forEach(agent => {
         previousShiftType[agent.id] = 'off';
         assignments.push({
@@ -169,7 +167,7 @@ export function solveWfmSchedule({
     const rotationShift = (weekNumber * 2 + dayIdx) % Math.max(1, agents.length);
     const rotatedAgents = [...agents.slice(rotationShift), ...agents.slice(0, rotationShift)];
 
-    // Sort by fewest shifts worked to ensure fair, balanced distribution
+    // Sort by fewest shifts worked to ensure fair, balanced distribution across 7 days
     const availablePool = rotatedAgents.sort((a, b) => {
       const diffShifts = (agentShiftCounts[a.id] || 0) - (agentShiftCounts[b.id] || 0);
       if (diffShifts !== 0) return diffShifts;
@@ -178,8 +176,16 @@ export function solveWfmSchedule({
 
     const assignedToday = new Set();
 
-    // 1. MANDATORY COVERAGE: EVERY single template in this team's shift set MUST be staffed on every working day (including Saturday!)
+    // 1. MANDATORY 7/7 COVERAGE: Every single template in this team runs EVERY day of the week (Monday-Sunday)
     availableTemplates.forEach((tmpl) => {
+      const tmplName = (tmpl.name || '').toLowerCase();
+      const tmplCode = (tmpl.code || '').toLowerCase();
+
+      // Check if this specific template has an exception for this day (e.g. 'Pazar gecesi yok')
+      if (dayName && (allDirectives.includes(`${dayName} ${tmplCode} yok`) || allDirectives.includes(`${dayName} ${tmplName} yok`))) {
+        return;
+      }
+
       const needed = tmpl.minRequired || 1;
       for (let req = 0; req < needed; req++) {
         const candidateIdx = availablePool.findIndex(a => !assignedToday.has(a.id) && canAgentWorkTemplate(a, tmpl));
@@ -191,9 +197,6 @@ export function solveWfmSchedule({
         agentShiftCounts[chosenAgent.id] = (agentShiftCounts[chosenAgent.id] || 0) + 1;
         agentTotalHours[chosenAgent.id] = (agentTotalHours[chosenAgent.id] || 0) + tmpl.durationHours;
 
-        // Record shift type for consecutive rest calculation
-        const tmplCode = (tmpl.code || '').toLowerCase();
-        const tmplName = (tmpl.name || '').toLowerCase();
         if (tmplName.includes('gece') || tmplCode.includes('gec')) {
           previousShiftType[chosenAgent.id] = 'night';
         } else if (tmplName.includes('akşam') || tmplCode.includes('aks')) {
@@ -230,13 +233,13 @@ export function solveWfmSchedule({
           status: 'scheduled',
           isHandedOver: false,
           handoverDetails: null,
-          notes: 'Takım Vardiya Seti Zorunlu Kapsama'
+          notes: '7/24 Kesintisiz Takım Vardiyası'
         });
       }
     });
 
     // 2. SCALE DAYTIME CAPACITY: Fill remaining working capacity so agents hit ~5 shifts/week
-    const targetWorkingToday = Math.min(agents.length, Math.max(availableTemplates.length, Math.round((agents.length * 5) / 6)));
+    const targetWorkingToday = Math.min(agents.length, Math.max(availableTemplates.length, Math.round((agents.length * 5) / 7)));
     const daytimeTemplates = availableTemplates.filter(t => !t.name.toLowerCase().includes('gece') && !t.code.toLowerCase().includes('gec'));
 
     let dayTmplIdx = 0;
