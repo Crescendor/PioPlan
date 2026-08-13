@@ -1,9 +1,6 @@
 // src/services/wfmSolver.js
 // Industrial-Grade Operations Research WFM Schedule & Constraint Solver for Call Centers
-// Guarantees:
-// 1. Every employee gets at least 2 days OFF per week (max 5 shifts).
-// 2. All shift templates in the team's set run 7/7 across all operating days.
-// 3. Strict adherence to individual constraints and fair rotating backups.
+// Dynamically parses all team and employee rules from natural language text.
 
 export function solveWfmSchedule({
   team,
@@ -45,6 +42,20 @@ export function solveWfmSchedule({
     color: '#64748b'
   };
 
+  // Dynamically parse minimum days off requirement from team rules or user directives
+  let minOffDaysPerWeek = 2; // default baseline
+  if (allDirectives.includes('2 gün izin') || allDirectives.includes('en az 2 gün') || allDirectives.includes('2 gün dinlenme') || allDirectives.includes('5 gün çalışma')) {
+    minOffDaysPerWeek = 2;
+  } else if (allDirectives.includes('1 gün izin') || allDirectives.includes('6 gün çalışma') || allDirectives.includes('tek gün izin') || allDirectives.includes('1 gün dinlenme') || allDirectives.includes('haftada 1 gün')) {
+    minOffDaysPerWeek = 1;
+  } else if (allDirectives.includes('3 gün izin') || allDirectives.includes('4 gün çalışma')) {
+    minOffDaysPerWeek = 3;
+  } else if (allDirectives.includes('izin zorunluluğu yok') || allDirectives.includes('izin şart değil')) {
+    minOffDaysPerWeek = 0;
+  }
+
+  const MAX_SHIFTS_PER_WEEK = Math.max(1, 7 - minOffDaysPerWeek);
+
   // Check if a day is globally OFF by explicit rule
   const isDayGloballyOff = (day) => {
     const dName = (day.dayLong || '').toLowerCase();
@@ -60,9 +71,6 @@ export function solveWfmSchedule({
   const startDate = new Date(days[0]?.iso || '2026-08-10');
   const dayOfYear = Math.floor((startDate - new Date(startDate.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
   const weekNumber = Math.floor(dayOfYear / 7);
-
-  // Maximum work shifts allowed per agent per 7-day week is 5 (guaranteeing at least 2 days OFF)
-  const MAX_SHIFTS_PER_WEEK = 5;
 
   const assignments = [];
   const agentShiftCounts = {};
@@ -110,10 +118,10 @@ export function solveWfmSchedule({
       return;
     }
 
-    // Helper: Check if an agent is legally and operationally allowed to work a template on this day
+    // Helper: Check if an agent is allowed to work a template on this day
     const canAgentWorkTemplate = (agent, tmpl) => {
-      // HARD RULE: If agent has already reached 5 working shifts in this week, they MUST take a rest day (OFF)!
-      if ((agentShiftCounts[agent.id] || 0) >= MAX_SHIFTS_PER_WEEK) {
+      // Dynamic shift cap based on team rules
+      if (minOffDaysPerWeek > 0 && (agentShiftCounts[agent.id] || 0) >= MAX_SHIFTS_PER_WEEK) {
         return false;
       }
 
@@ -142,12 +150,10 @@ export function solveWfmSchedule({
 
       // Check all individual agent rules
       for (const r of rules) {
-        // Night shift bans
         if (isNight && (r.includes('gece') && (r.includes('yazılamaz') || r.includes('çalışamaz') || r.includes('yasak') || r.includes('olmasın') || r.includes('yazılmamalı')))) {
           return false;
         }
 
-        // Weekend / Saturday / Sunday off rules
         if (isWeekend && (r.includes('hafta sonu izinli') || r.includes('hafta sonu çalışamaz') || r.includes('hafta sonu nöbet tutmasın'))) {
           return false;
         }
@@ -155,7 +161,6 @@ export function solveWfmSchedule({
           return false;
         }
 
-        // Specific day constraints (e.g. "Pazartesi üniversite dersi var, sadece Akşam veya OFF")
         if (dayName && r.includes(dayName)) {
           if (r.includes('sadece akşam') && !isEvening) return false;
           if (r.includes('sadece sabah') && !isMorning) return false;
@@ -173,7 +178,6 @@ export function solveWfmSchedule({
     const rotationShift = (weekNumber * 2 + dayIdx) % Math.max(1, agents.length);
     const rotatedAgents = [...agents.slice(rotationShift), ...agents.slice(0, rotationShift)];
 
-    // Sort by fewest shifts worked to ensure fair, balanced distribution across 7 days
     const availablePool = rotatedAgents.sort((a, b) => {
       const diffShifts = (agentShiftCounts[a.id] || 0) - (agentShiftCounts[b.id] || 0);
       if (diffShifts !== 0) return diffShifts;
@@ -182,12 +186,11 @@ export function solveWfmSchedule({
 
     const assignedToday = new Set();
 
-    // 1. MANDATORY 7/7 COVERAGE: Every single template in this team runs EVERY day of the week (Monday-Sunday)
+    // 1. MANDATORY 7/7 COVERAGE: Every active template in this team runs on every operating day
     availableTemplates.forEach((tmpl) => {
       const tmplName = (tmpl.name || '').toLowerCase();
       const tmplCode = (tmpl.code || '').toLowerCase();
 
-      // Check if this specific template has an exception for this day (e.g. 'Pazar gecesi yok')
       if (dayName && (allDirectives.includes(`${dayName} ${tmplCode} yok`) || allDirectives.includes(`${dayName} ${tmplName} yok`))) {
         return;
       }
@@ -211,7 +214,6 @@ export function solveWfmSchedule({
           previousShiftType[chosenAgent.id] = 'morning';
         }
 
-        // FAIR ROTATING BACKUPS: Pick 2 agents who have served as backups the fewest times
         const candidateBackups = agents
           .filter(a => a.id !== chosenAgent.id)
           .sort((a, b) => (agentBackupCounts[a.id] || 0) - (agentBackupCounts[b.id] || 0));
@@ -244,8 +246,8 @@ export function solveWfmSchedule({
       }
     });
 
-    // 2. SCALE DAYTIME CAPACITY (Only for agents who have worked LESS than 5 shifts!)
-    const targetWorkingToday = Math.min(agents.length, Math.max(availableTemplates.length, Math.round((agents.length * 5) / 7)));
+    // 2. SCALE DAYTIME CAPACITY (Up to target weekly work shifts)
+    const targetWorkingToday = Math.min(agents.length, Math.max(availableTemplates.length, Math.round((agents.length * MAX_SHIFTS_PER_WEEK) / 7)));
     const daytimeTemplates = availableTemplates.filter(t => !t.name.toLowerCase().includes('gece') && !t.code.toLowerCase().includes('gec'));
 
     let dayTmplIdx = 0;
