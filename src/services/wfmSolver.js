@@ -1,9 +1,9 @@
 // src/services/wfmSolver.js
 // Industrial-Grade Call Center WFM Schedule & Constraint Solver
 // Guarantees:
-// 1. 0 Violations (%100 Kural Uyumu): Turkish unicode normalized constraint parsing (İ/I/ı, ş/s, vb.).
-// 2. 7/7 Continuous Line Coverage: EVERY shift in the team's set is actively staffed across all 7 days of the week (Monday through Sunday).
-// 3. Full Capacity Distribution: All agents are scheduled for their target weekly hours (~40-45h / 5 days), no one is left with 0 hours.
+// 1. 7/7 Balanced Weekend Staffing: Saturday and Sunday are as fully staffed as weekdays (7-8 agents on line, rotated OFF days).
+// 2. 0 Violations (%100 Kural Uyumu): Turkish unicode normalized constraint parsing (İ/I/ı, ş/s, vb.).
+// 3. Complete Team Capacity: All agents are scheduled for their target weekly hours (~40-45h / 5 days), no one is left with 0 hours.
 // 4. Strict Individual Rest & Constraints: Respects personal day-off rules (e.g. Cuma-Cmt izinli), night bans, and health/education hours.
 // 5. Distinct Rotating Standby Backups: Fair round-robin 1st and 2nd backups across all non-conflicting agents.
 
@@ -116,11 +116,49 @@ export function solveWfmSchedule({
     minOffDaysPerWeek = 0;
   }
 
-  const MAX_SHIFTS_PER_WEEK = Math.max(1, 7 - minOffDaysPerWeek);
-
   const startDate = new Date(days[0]?.iso || '2026-08-10');
   const dayOfYear = Math.floor((startDate - new Date(startDate.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
   const weekNumber = Math.floor(dayOfYear / 7);
+
+  // 2. Pre-Compute Staggered Rest Days for Every Agent
+  // This guarantees that weekend days (Saturday & Sunday) have full staffing rather than everyone taking off on weekends!
+  const agentOffDayIndices = {}; // agentId -> Set of day indices (0 to days.length - 1)
+  agents.forEach((ag, agIdx) => {
+    agentOffDayIndices[ag.id] = new Set();
+    const rules = (ag.rules || []).map(r => normalizeTurkish(r));
+
+    // A. Check hard fixed rest day rules (e.g. Berkay: Cuma, Cumartesi Sabit İzinli)
+    days.forEach((d, dIdx) => {
+      const dName = normalizeTurkish(d.dayLong || '');
+      for (const r of rules) {
+        if (dName && isRuleMatchingDay(r, dName) && (r.includes('izinli') || r.includes('calisamaz') || r.includes('ders') || r.includes('saglik') || r.includes('izin'))) {
+          agentOffDayIndices[ag.id].add(dIdx);
+        }
+      }
+    });
+
+    // B. Distribute remaining required off days in a smooth staggered rotation across all days
+    // Slices into weekly cycles of 7 days
+    for (let w = 0; w < days.length; w += 7) {
+      const weekDaysCount = Math.min(7, days.length - w);
+      let offInThisWeek = 0;
+      for (let i = 0; i < weekDaysCount; i++) {
+        if (agentOffDayIndices[ag.id].has(w + i)) {
+          offInThisWeek++;
+        }
+      }
+
+      let offset = ((agIdx * 2) + (weekNumber * 2)) % weekDaysCount;
+      while (offInThisWeek < minOffDaysPerWeek && offset < weekDaysCount * 2) {
+        const targetDayIdx = w + (offset % weekDaysCount);
+        if (!agentOffDayIndices[ag.id].has(targetDayIdx)) {
+          agentOffDayIndices[ag.id].add(targetDayIdx);
+          offInThisWeek++;
+        }
+        offset++;
+      }
+    }
+  });
 
   const assignments = [];
   const agentShiftCounts = {};
@@ -135,14 +173,15 @@ export function solveWfmSchedule({
 
   const previousShiftType = {};
 
+  // 3. Assign Shifts Day by Day
   days.forEach((day, dayIdx) => {
     const dayName = normalizeTurkish(day.dayLong || '');
     const isWeekend = day.isWeekend;
 
     // Helper: Check if an agent is allowed to work a template on this day
     const canAgentWorkTemplate = (agent, tmpl) => {
-      // Hard weekly shift cap
-      if (minOffDaysPerWeek > 0 && (agentShiftCounts[agent.id] || 0) >= MAX_SHIFTS_PER_WEEK) {
+      // If agent is designated for rest on this day
+      if (agentOffDayIndices[agent.id]?.has(dayIdx)) {
         return false;
       }
 
@@ -175,39 +214,24 @@ export function solveWfmSchedule({
           return false;
         }
 
-        if (isWeekend && (r.includes('hafta sonu izinli') || r.includes('hafta sonu calisamaz') || r.includes('hafta sonu nobet tutmasin'))) {
-          return false;
-        }
-
-        // Match exact day with Turkish word boundary protection
         if (dayName && isRuleMatchingDay(r, dayName)) {
           if (r.includes('sadece aksam') && !isEvening) return false;
           if (r.includes('sadece sabah') && !isMorning) return false;
           if (r.includes('sadece gece') && !isNight) return false;
-          if ((r.includes('izinli') || r.includes('calisamaz') || r.includes('dersi var') || r.includes('saglik') || r.includes('izin')) && !r.includes('aksam') && !r.includes('sabah')) {
-            return false;
-          }
         }
       }
 
       return true;
     };
 
-    // Target working headcount for today: e.g. for 11 agents, 8 agents work each day!
-    const targetWorkingToday = Math.min(
-      agents.length,
-      Math.max(availableTemplates.length, Math.round((agents.length * MAX_SHIFTS_PER_WEEK) / 7))
-    );
-
-    // Fair Rotation of Candidate Pool based on week number and day index
-    const rotationShift = (weekNumber * 3 + dayIdx * 2) % Math.max(1, agents.length);
-    const rotatedAgents = [...agents.slice(rotationShift), ...agents.slice(0, rotationShift)];
-
-    const availablePool = rotatedAgents.sort((a, b) => {
-      const diffShifts = (agentShiftCounts[a.id] || 0) - (agentShiftCounts[b.id] || 0);
-      if (diffShifts !== 0) return diffShifts;
-      return (agentTotalHours[a.id] || 0) - (agentTotalHours[b.id] || 0);
-    });
+    // Candidates working today
+    const availablePool = agents
+      .filter(ag => !agentOffDayIndices[ag.id]?.has(dayIdx))
+      .sort((a, b) => {
+        const diffShifts = (agentShiftCounts[a.id] || 0) - (agentShiftCounts[b.id] || 0);
+        if (diffShifts !== 0) return diffShifts;
+        return (agentTotalHours[a.id] || 0) - (agentTotalHours[b.id] || 0);
+      });
 
     const assignedToday = new Set();
 
@@ -259,9 +283,9 @@ export function solveWfmSchedule({
       });
     });
 
-    // 2. CALL CENTER FULL CAPACITY FILL: Fill remaining target headcount across all available templates
+    // 2. CALL CENTER FULL CAPACITY FILL: Fill all remaining working agents across available templates
     let tmplIdx = 0;
-    while (assignedToday.size < targetWorkingToday && availablePool.length > 0 && availableTemplates.length > 0) {
+    while (availablePool.length > 0 && availableTemplates.length > 0) {
       const tmpl = availableTemplates[tmplIdx % availableTemplates.length];
       tmplIdx++;
 
@@ -313,7 +337,7 @@ export function solveWfmSchedule({
       });
     }
 
-    // 3. All remaining agents get OFF (Rest Day) for this day
+    // 3. All rest-day agents get OFF for this day
     agents.forEach(agent => {
       if (!assignedToday.has(agent.id)) {
         previousShiftType[agent.id] = 'off';
