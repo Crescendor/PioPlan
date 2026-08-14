@@ -14,6 +14,39 @@ const GEMINI_MODELS = [
 ];
 
 /**
+ * Robust Turkish Day Matcher
+ */
+function isRuleMatchingDay(ruleText, targetDayName) {
+  const text = (ruleText || '').toLowerCase();
+  const day = (targetDayName || '').toLowerCase();
+
+  if (day.includes('pazar') && !day.includes('pazartesi')) {
+    return (text.includes('pazar') && !text.includes('pazartesi')) ||
+           /\bpazar(?!tesi)\b|\bpazarları\b|\bpazar\s+günü\b|\bpazar\s+günleri\b/.test(text);
+  }
+  if (day.includes('pazartesi')) {
+    return text.includes('pazartesi');
+  }
+  if (day.includes('cuma') && !day.includes('cumartesi')) {
+    return (text.includes('cuma') && !text.includes('cumartesi')) ||
+           /\bcuma(?!rtesi)\b|\bcumaları\b|\bcuma\s+günü\b|\bcuma\s+günleri\b/.test(text);
+  }
+  if (day.includes('cumartesi')) {
+    return text.includes('cumartesi');
+  }
+  if (day.includes('salı') || day.includes('sali')) {
+    return text.includes('salı') || text.includes('sali');
+  }
+  if (day.includes('çarşamba') || day.includes('carsamba')) {
+    return text.includes('çarşamba') || text.includes('carsamba');
+  }
+  if (day.includes('perşembe') || day.includes('persembe')) {
+    return text.includes('perşembe') || text.includes('persembe');
+  }
+  return text.includes(day);
+}
+
+/**
  * Execute an instruction with the Pioneers AI WFM Planning Agent
  */
 export async function executeAiPlanningAgent({
@@ -416,7 +449,7 @@ function validateAndEnforceConstraints({
     const dayName = (d?.dayLong || '').toLowerCase();
     const agentRules = (agent.rules || []).map(r => r.toLowerCase());
     for (const r of agentRules) {
-      if (dayName && r.includes(dayName) && (r.includes('izinli') || r.includes('çalışamaz'))) {
+      if (dayName && isRuleMatchingDay(r, dayName) && (r.includes('izinli') || r.includes('çalışamaz'))) {
         isOff = true;
       }
     }

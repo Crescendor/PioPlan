@@ -1,10 +1,45 @@
 // src/services/wfmSolver.js
 // Industrial-Grade Call Center WFM Schedule & Constraint Solver
 // Guarantees:
-// 1. 7/7 Continuous Line Coverage: EVERY shift in the team's set is actively staffed across all days of the week.
+// 1. 7/7 Continuous Line Coverage: EVERY shift in the team's set is actively staffed across all 7 days of the week (Monday through Sunday).
 // 2. Full Capacity Distribution: All agents are scheduled for their target weekly hours (~40-45h / 5 days), no one is left with 0 hours.
 // 3. Strict Individual Rest & Constraints: Respects personal day-off rules (e.g. Cuma-Cmt izinli), night bans, and health/education hours.
 // 4. Distinct Rotating Standby Backups: Fair round-robin 1st and 2nd backups across all non-conflicting agents.
+
+/**
+ * Robust Turkish Day Matcher: Prevents 'pazartesi' from matching 'pazar', and 'cumartesi' from matching 'cuma'.
+ */
+function isRuleMatchingDay(ruleText, targetDayName) {
+  const text = (ruleText || '').toLowerCase();
+  const day = (targetDayName || '').toLowerCase();
+
+  if (day.includes('pazar') && !day.includes('pazartesi')) {
+    // Exact Sunday check (must NOT match pazartesi)
+    return (text.includes('pazar') && !text.includes('pazartesi')) ||
+           /\bpazar(?!tesi)\b|\bpazarları\b|\bpazar\s+günü\b|\bpazar\s+günleri\b/.test(text);
+  }
+  if (day.includes('pazartesi')) {
+    return text.includes('pazartesi');
+  }
+  if (day.includes('cuma') && !day.includes('cumartesi')) {
+    // Exact Friday check (must NOT match cumartesi)
+    return (text.includes('cuma') && !text.includes('cumartesi')) ||
+           /\bcuma(?!rtesi)\b|\bcumaları\b|\bcuma\s+günü\b|\bcuma\s+günleri\b/.test(text);
+  }
+  if (day.includes('cumartesi')) {
+    return text.includes('cumartesi');
+  }
+  if (day.includes('salı') || day.includes('sali')) {
+    return text.includes('salı') || text.includes('sali');
+  }
+  if (day.includes('çarşamba') || day.includes('carsamba')) {
+    return text.includes('çarşamba') || text.includes('carsamba');
+  }
+  if (day.includes('perşembe') || day.includes('persembe')) {
+    return text.includes('perşembe') || text.includes('persembe');
+  }
+  return text.includes(day);
+}
 
 export function solveWfmSchedule({
   team,
@@ -80,7 +115,6 @@ export function solveWfmSchedule({
   days.forEach((day, dayIdx) => {
     const dayName = (day.dayLong || '').toLowerCase();
     const isWeekend = day.isWeekend;
-    const isSunday = dayName.includes('pazar');
 
     // Helper: Check if an agent is allowed to work a template on this day
     const canAgentWorkTemplate = (agent, tmpl) => {
@@ -121,11 +155,9 @@ export function solveWfmSchedule({
         if (isWeekend && (r.includes('hafta sonu izinli') || r.includes('hafta sonu çalışamaz') || r.includes('hafta sonu nöbet tutmasın'))) {
           return false;
         }
-        if (isSunday && (r.includes('pazar izinli') || r.includes('pazar günü izinli') || r.includes('pazar kesinlikle izinli'))) {
-          return false;
-        }
 
-        if (dayName && r.includes(dayName)) {
+        // Match exact day with Turkish word boundary protection
+        if (dayName && isRuleMatchingDay(r, dayName)) {
           if (r.includes('sadece akşam') && !isEvening) return false;
           if (r.includes('sadece sabah') && !isMorning) return false;
           if (r.includes('sadece gece') && !isNight) return false;
@@ -156,7 +188,7 @@ export function solveWfmSchedule({
 
     const assignedToday = new Set();
 
-    // 1. MANDATORY BASE COVERAGE: Every active template in this team MUST have at least 1 agent every day (7/7)
+    // 1. MANDATORY BASE COVERAGE: Every active template in this team MUST have at least 1 agent every day (7/7 - Monday through Sunday!)
     availableTemplates.forEach((tmpl) => {
       const candidateIdx = availablePool.findIndex(a => !assignedToday.has(a.id) && canAgentWorkTemplate(a, tmpl));
       if (candidateIdx === -1) return;
