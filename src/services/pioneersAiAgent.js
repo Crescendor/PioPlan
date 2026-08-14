@@ -3,7 +3,7 @@
 // Powered by Multi-Model Engines with Complete Team Schedule Guarantee & 0 Violations
 
 import { getPioneersApiKey } from './pioneersAi';
-import { solveWfmSchedule, normalizeTurkish, isRuleMatchingDay, isTemplateForbidden } from './wfmSolver';
+import { solveWfmSchedule, normalizeTurkish, isRuleMatchingDay, isTemplateForbidden, doesRuleForbidTemplate } from './wfmSolver';
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
@@ -370,7 +370,19 @@ function validateAndEnforceConstraints({
       if (forbiddenTemplateIds.has(selectedTemplate.id)) {
         selectedTemplate = defaultWorkingTemplate;
       }
-      agentWeeklyWorkCount[agent.id] = (agentWeeklyWorkCount[agent.id] || 0) + 1;
+
+      // If this specific template is forbidden for this agent (e.g. Tuğrul cannot work LATO1/LATO2/LATO3)
+      for (const r of agentRules) {
+        if (doesRuleForbidTemplate(r, selectedTemplate)) {
+          selectedTemplate = allowedTemplates.find(t => !doesRuleForbidTemplate(r, t)) || offTemplate;
+        }
+      }
+
+      if (selectedTemplate.startTime !== 'OFF') {
+        agentWeeklyWorkCount[agent.id] = (agentWeeklyWorkCount[agent.id] || 0) + 1;
+      } else {
+        isOff = true;
+      }
     }
 
     // FAIR ROTATING BACKUPS

@@ -115,6 +115,69 @@ export function isTemplateForbidden(tmpl, text) {
   return checkPhrase(code) || checkPhrase(name);
 }
 
+/**
+ * Check if an individual agent rule specifically forbids a given shift template
+ * e.g. "LATO01, LATO02, LATO03 mesailerini alamaz. Yani gece mesaisi yapamaz."
+ */
+export function doesRuleForbidTemplate(ruleText, tmpl) {
+  const normRule = normalizeTurkish(ruleText);
+  const code = normalizeTurkish(tmpl.code);
+  const name = normalizeTurkish(tmpl.name);
+
+  // Variations: lato01 -> lato1, lato1 -> lato01
+  const codeWithoutZero = code.replace(/0+(\d+)/, '$1');
+  const codeWithZero = code.replace(/([a-z]+)(\d)$/, '$10$2');
+
+  const searchTerms = [code, name, codeWithoutZero, codeWithZero].filter(Boolean);
+
+  const negativeWords = [
+    'alamaz',
+    'yazilamaz',
+    'calisamaz',
+    'yapamaz',
+    'olmasin',
+    'olmayacak',
+    'yasak',
+    'istemiyor',
+    'istemez',
+    'verilmesin',
+    'yok',
+    'iptal',
+    'almaz'
+  ];
+
+  // 1. Direct shift code check in rule
+  for (const term of searchTerms) {
+    if (term.length >= 2 && normRule.includes(term)) {
+      if (negativeWords.some(neg => normRule.includes(neg))) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Night / Late shift check (gece / aksam)
+  const isNightOrLate = tmpl.endTime.startsWith('00') ||
+                        tmpl.endTime.startsWith('01') ||
+                        tmpl.endTime.startsWith('02') ||
+                        tmpl.endTime.startsWith('03') ||
+                        tmpl.endTime.startsWith('04') ||
+                        tmpl.endTime.startsWith('05') ||
+                        tmpl.endTime.startsWith('06') ||
+                        tmpl.endTime.startsWith('07') ||
+                        tmpl.endTime.startsWith('08') ||
+                        tmpl.startTime.startsWith('22') ||
+                        tmpl.startTime.startsWith('23') ||
+                        tmpl.startTime.startsWith('00') ||
+                        code.includes('gec') ||
+                        name.includes('gece');
+
+  if (isNightOrLate && (normRule.includes('gece') && (normRule.includes('alamaz') || normRule.includes('yapamaz') || normRule.includes('calisamaz') || normRule.includes('yazilamaz') || normRule.includes('yasak') || normRule.includes('olmasin')))) {
+    return true;
+  }
+
+  return false;
+}
+
 export function solveWfmSchedule({
   team,
   agents,
@@ -256,7 +319,8 @@ export function solveWfmSchedule({
 
       // Check all individual agent rules
       for (const r of rules) {
-        if (isNight && (r.includes('gece') && (r.includes('yazilamaz') || r.includes('calisamaz') || r.includes('yasak') || r.includes('olmasin') || r.includes('yazilmamali')))) {
+        // 1. Direct template / shift code / night restriction check
+        if (doesRuleForbidTemplate(r, tmpl)) {
           return false;
         }
 
