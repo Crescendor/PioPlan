@@ -3,7 +3,7 @@
 // Powered by Multi-Model Engines with Complete Team Schedule Guarantee
 
 import { getPioneersApiKey } from './pioneersAi';
-import { solveWfmSchedule } from './wfmSolver';
+import { solveWfmSchedule, normalizeTurkish, isRuleMatchingDay } from './wfmSolver';
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
@@ -12,39 +12,6 @@ const GEMINI_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.6-flash'
 ];
-
-/**
- * Robust Turkish Day Matcher
- */
-function isRuleMatchingDay(ruleText, targetDayName) {
-  const text = (ruleText || '').toLowerCase();
-  const day = (targetDayName || '').toLowerCase();
-
-  if (day.includes('pazar') && !day.includes('pazartesi')) {
-    return (text.includes('pazar') && !text.includes('pazartesi')) ||
-           /\bpazar(?!tesi)\b|\bpazarları\b|\bpazar\s+günü\b|\bpazar\s+günleri\b/.test(text);
-  }
-  if (day.includes('pazartesi')) {
-    return text.includes('pazartesi');
-  }
-  if (day.includes('cuma') && !day.includes('cumartesi')) {
-    return (text.includes('cuma') && !text.includes('cumartesi')) ||
-           /\bcuma(?!rtesi)\b|\bcumaları\b|\bcuma\s+günü\b|\bcuma\s+günleri\b/.test(text);
-  }
-  if (day.includes('cumartesi')) {
-    return text.includes('cumartesi');
-  }
-  if (day.includes('salı') || day.includes('sali')) {
-    return text.includes('salı') || text.includes('sali');
-  }
-  if (day.includes('çarşamba') || day.includes('carsamba')) {
-    return text.includes('çarşamba') || text.includes('carsamba');
-  }
-  if (day.includes('perşembe') || day.includes('persembe')) {
-    return text.includes('perşembe') || text.includes('persembe');
-  }
-  return text.includes(day);
-}
 
 /**
  * Execute an instruction with the Pioneers AI WFM Planning Agent
@@ -381,20 +348,20 @@ function validateAndEnforceConstraints({
   baselineAssignments = [],
   planMode = 'fresh'
 }) {
-  const allDirectives = [
+  const allDirectives = normalizeTurkish([
     userPrompt || '',
     ...(team.rules || [])
-  ].join(' ').toLowerCase();
+  ].join(' '));
 
   const templates = team.shiftTemplates || [];
 
   const forbiddenTemplateIds = new Set();
   templates.forEach(t => {
-    const code = (t.code || '').toLowerCase();
-    const name = (t.name || '').toLowerCase();
+    const code = normalizeTurkish(t.code);
+    const name = normalizeTurkish(t.name);
     if (
-      (code && (allDirectives.includes(`${code} olmasın`) || allDirectives.includes(`${code} kullanılmasın`) || allDirectives.includes(`${code} kesinlikle olmayacak`) || allDirectives.includes(`${code} yasak`) || allDirectives.includes(`${code} iptal`))) ||
-      (name && (allDirectives.includes(`${name} olmasın`) || allDirectives.includes(`${name} kullanılmasın`) || allDirectives.includes(`${name} kesinlikle olmayacak`) || allDirectives.includes(`${name} yasak`)))
+      (code && (allDirectives.includes(`${code} olmasin`) || allDirectives.includes(`${code} kullanilmasin`) || allDirectives.includes(`${code} kesinlikle olmayacak`) || allDirectives.includes(`${code} yasak`) || allDirectives.includes(`${code} iptal`))) ||
+      (name && (allDirectives.includes(`${name} olmasin`) || allDirectives.includes(`${name} kullanilmasin`) || allDirectives.includes(`${name} kesinlikle olmayacak`) || allDirectives.includes(`${name} yasak`)))
     ) {
       forbiddenTemplateIds.add(t.id);
     }
@@ -446,10 +413,10 @@ function validateAndEnforceConstraints({
 
     // Respect agent fixed day-off rules (e.g. "Cuma, Cumartesi Sabit İzinli")
     const d = days.find(day => day.iso === asg.date);
-    const dayName = (d?.dayLong || '').toLowerCase();
-    const agentRules = (agent.rules || []).map(r => r.toLowerCase());
+    const dayName = normalizeTurkish(d?.dayLong || '');
+    const agentRules = (agent.rules || []).map(r => normalizeTurkish(r));
     for (const r of agentRules) {
-      if (dayName && isRuleMatchingDay(r, dayName) && (r.includes('izinli') || r.includes('çalışamaz'))) {
+      if (dayName && isRuleMatchingDay(r, dayName) && (r.includes('izinli') || r.includes('calisamaz') || r.includes('izin') || r.includes('ders'))) {
         isOff = true;
       }
     }
