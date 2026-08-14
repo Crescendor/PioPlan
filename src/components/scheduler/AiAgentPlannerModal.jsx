@@ -24,10 +24,10 @@ import confetti from 'canvas-confetti';
 import { getMondayOfWeek, getDaysOfWeek, getDaysInMonth, parseDateISO } from '../../utils/dateUtils';
 
 const FRESH_PROMPT_SUGGESTIONS = [
-  'BON01 vardiyası kesinlikle olmasın, diğer vardiyaları kurallara göre dağıt.',
+  'Haftanın 7 günü (Pzt-Paz) tüm vardiyaları eksiksiz planla, 2 gün izinleri rotasyonla ver.',
   'Tüm takım ve çalışan kurallarına %100 sadık kalarak eksiksiz program planla.',
   'Gece vardiyalarını sadece uygun temsilcilere ver, gündüzleri eşit paylaştır.',
-  'Pazar günlerini herkese izinli yap, hafta içine 2 kademeli yedekleri eksiksiz ata.'
+  'Haftalık 40-45 saatlik çalışma sürelerini takımdaki tüm personele dengeli dağıt.'
 ];
 
 const EDIT_PROMPT_SUGGESTIONS = [

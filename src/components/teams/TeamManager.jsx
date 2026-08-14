@@ -22,7 +22,7 @@ const QUICK_RULE_SUGGESTIONS = [
   'Gece vardiyasından (00:00-08:30) çıkan personel en az 24 saat dinlendirilmelidir.',
   'Yoğun saatler olan 10:00 - 18:00 arasında aynı anda en az 3 temsilci aktif olmalıdır.',
   'Haftalık maksimum toplam mesai 45 saati geçemez.',
-  'Pazar günleri takım genel izin günüdür.',
+  'Operasyon haftanın 7 günü kesintisiz devam eder, izinler rotasyonla dağıtılır.',
   'Her vardiya için mutlaka 1. ve 2. yedek temsilci atanmış olmalıdır.'
 ];
 
