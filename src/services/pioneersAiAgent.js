@@ -3,7 +3,7 @@
 // Powered by Multi-Model Engines with Complete Team Schedule Guarantee & 0 Violations
 
 import { getPioneersApiKey } from './pioneersAi';
-import { solveWfmSchedule, normalizeTurkish, isRuleMatchingDay } from './wfmSolver';
+import { solveWfmSchedule, normalizeTurkish, isRuleMatchingDay, isTemplateForbidden } from './wfmSolver';
 
 const GEMINI_MODELS = [
   'gemini-3.5-flash-lite',
@@ -296,12 +296,7 @@ function validateAndEnforceConstraints({
 
   const forbiddenTemplateIds = new Set();
   templates.forEach(t => {
-    const code = normalizeTurkish(t.code);
-    const name = normalizeTurkish(t.name);
-    if (
-      (code && (allDirectives.includes(`${code} olmasin`) || allDirectives.includes(`${code} kullanilmasin`) || allDirectives.includes(`${code} kesinlikle olmayacak`) || allDirectives.includes(`${code} yasak`) || allDirectives.includes(`${code} iptal`))) ||
-      (name && (allDirectives.includes(`${name} olmasin`) || allDirectives.includes(`${name} kullanilmasin`) || allDirectives.includes(`${name} kesinlikle olmayacak`) || allDirectives.includes(`${name} yasak`)))
-    ) {
+    if (isTemplateForbidden(t, allDirectives)) {
       forbiddenTemplateIds.add(t.id);
     }
   });

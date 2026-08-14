@@ -64,6 +64,57 @@ export function isRuleMatchingDay(ruleText, targetDayName) {
   return text.includes(day);
 }
 
+/**
+ * Robust Forbidden Template Matcher
+ */
+export function isTemplateForbidden(tmpl, text) {
+  const code = normalizeTurkish(tmpl.code);
+  const name = normalizeTurkish(tmpl.name);
+  const normText = normalizeTurkish(text);
+
+  const checkPhrase = (term) => {
+    if (!term || term.length < 2) return false;
+    if (!normText.includes(term)) return false;
+
+    const negativeWords = [
+      'olmasin',
+      'olmayacak',
+      'olmadan',
+      'olmaz',
+      'yazilmasin',
+      'yok',
+      'yasak',
+      'iptal',
+      'kullanilmasin',
+      'haric',
+      'cikart',
+      'istemiyorum',
+      'yazma',
+      'koyma',
+      'verme'
+    ];
+
+    const clauses = normText.split(/[,.;\n]/);
+    for (const clause of clauses) {
+      if (clause.includes(term)) {
+        if (negativeWords.some(neg => clause.includes(neg))) {
+          return true;
+        }
+      }
+    }
+
+    for (const neg of negativeWords) {
+      if (normText.includes(term) && normText.includes(neg)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  return checkPhrase(code) || checkPhrase(name);
+}
+
 export function solveWfmSchedule({
   team,
   agents,
@@ -80,14 +131,9 @@ export function solveWfmSchedule({
   const templates = (team.shiftTemplates || []).filter(t => t.startTime !== 'OFF');
   const activeForbiddenIds = new Set(forbiddenShiftIds);
 
-  // 1. Identify forbidden template IDs
+  // 1. Identify forbidden template IDs using robust matcher
   templates.forEach(t => {
-    const code = normalizeTurkish(t.code);
-    const name = normalizeTurkish(t.name);
-    if (
-      (code && (allDirectives.includes(code + ' olmasin') || allDirectives.includes(code + ' kullanilmasin') || allDirectives.includes(code + ' kesinlikle olmayacak') || allDirectives.includes(code + ' yok') || allDirectives.includes(code + ' yasak') || allDirectives.includes(code + ' iptal'))) ||
-      (name && (allDirectives.includes(name + ' olmasin') || allDirectives.includes(name + ' kullanilmasin') || allDirectives.includes(name + ' kesinlikle olmayacak') || allDirectives.includes(name + ' yasak')))
-    ) {
+    if (isTemplateForbidden(t, allDirectives)) {
       activeForbiddenIds.add(t.id);
     }
   });
