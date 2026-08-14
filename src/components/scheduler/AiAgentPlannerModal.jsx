@@ -298,7 +298,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <span>{planMode === 'edit' ? 'Düzenleme / Revizyon Talimatı:' : 'Yeni Planlama Talimatı:'}</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {planMode === 'edit' ? 'Örn: Caner ile Mert in Salı vardiyasını takas et' : 'Örn: BON01 olmasın, Pazar herkes izinli'}
+              {planMode === 'edit' ? 'Örn: Caner ile Mert in Salı vardiyasını takas et' : 'Örn: Haftanın 7 günü tüm vardiyaları eksiksiz doldur'}
             </span>
           </label>
           <div style={{ position: 'relative' }}>
@@ -311,7 +311,7 @@ export function AiAgentPlannerModal({ isOpen, onClose }) {
               placeholder={
                 planMode === 'edit'
                   ? 'Örn: Salı günü Caner ile Mert in vardiyalarını takas et. Çarşamba Zeynep i izinli yap, diğer herkes aynı kalsın...'
-                  : 'Örn: BON01 vardiyası kesinlikle olmayacak. Caner sadece Akşam vardiyasında çalışsın, Pazar günleri herkes izinli olsun...'
+                  : 'Örn: BON01 vardiyası olmasın. Takım ve kişi kurallarına tam uyarak haftanın 7 günü (Cumartesi ve Pazar dahil) eksiksiz ve dengeli bir program yap...'
               }
               disabled={isAgentRunning}
             />
