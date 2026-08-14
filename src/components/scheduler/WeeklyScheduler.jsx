@@ -12,8 +12,10 @@ import {
   ShieldCheck,
   UserCheck,
   Calendar as CalendarIcon,
-  Trash2
+  Trash2,
+  Zap
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import {
   getMondayOfWeek,
   getDaysOfWeek,
@@ -24,6 +26,7 @@ import { ShiftEditModal } from './ShiftEditModal';
 import { AiAuditScorecard } from './AiAuditScorecard';
 import { ClearScheduleModal } from './ClearScheduleModal';
 import { exportTeamRosterPdf } from '../../services/pdfService';
+import { solveWfmSchedule } from '../../services/wfmSolver';
 
 export function WeeklyScheduler({ onOpenAiModal }) {
   const {
@@ -38,6 +41,7 @@ export function WeeklyScheduler({ onOpenAiModal }) {
     setPeriod,
     setCurrentView,
     isAiGenerating,
+    applyAgentSchedule,
     notify
   } = usePlan();
 
@@ -76,6 +80,26 @@ export function WeeklyScheduler({ onOpenAiModal }) {
 
   const handleToday = () => {
     setCurrentDate(formatDateISO(getMondayOfWeek(new Date())));
+  };
+
+  // 1-Click Instant 7/24 Call Center Plan
+  const handleQuick724Plan = () => {
+    if (!currentTeam || teamAgents.length === 0) {
+      notify('Takımda kayıtlı çalışan bulunamadı.', 'warning');
+      return;
+    }
+    const result = solveWfmSchedule({
+      team: currentTeam,
+      agents: teamAgents,
+      days: weekDays
+    });
+    if (result && result.assignments) {
+      applyAgentSchedule(result.assignments, weekDays, currentTeam.id);
+      try {
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      } catch (e) {}
+      notify(`${currentTeam.name} için 7/24 kesintisiz vardiya planı ve yedekler uygulandı.`, 'success', '7/24 Hat Planı Hazır');
+    }
   };
 
   // Export PDF
@@ -238,6 +262,17 @@ export function WeeklyScheduler({ onOpenAiModal }) {
           </div>
 
           {/* Action Buttons */}
+          <button
+            type="button"
+            onClick={handleQuick724Plan}
+            className="btn btn-primary btn-sm"
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', padding: '6px 12px', fontSize: 12.5 }}
+            title="Takımın tüm vardiyalarını 7 gün kesintisiz ve kurallara %100 uyumlu olarak 1 tıkla anında planla"
+          >
+            <Zap size={14} />
+            <span>7/24 Kesintisiz Planla</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenAiModal}
